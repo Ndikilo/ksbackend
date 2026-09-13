@@ -1,0 +1,3 @@
+ALTER TABLE "availability_slot" ADD COLUMN "consultation_types" "consultation_type"[] DEFAULT '{}' NOT NULL;--> statement-breakpoint
+ALTER TABLE "availability_slot" ADD COLUMN "location_id" uuid;--> statement-breakpoint
+ALTER TABLE "availability_slot" ADD CONSTRAINT "availability_slot_location_id_practice_location_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."practice_location"("id") ON DELETE no action ON UPDATE no action;

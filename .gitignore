@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Env: schema is committed; local + generated files are not
+.env.local
+.env.*.local
+env.d.ts
+
+# Logs / OS
+*.log
+.logs/
+.DS_Store
+
+# Local planning docs — not committed for now (graduate into docs/ as they land)
+docs/SCAFFOLDING_PLAN.md
+docs/AUTH_PLAN.md
+docs/PROFILE_PLAN.md
+docs/plans/

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# One-command bootstrap for local development. Idempotent — safe to re-run.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "▶ Installing dependencies (bun install)…"
+bun install
+
+if [ ! -f .env.local ]; then
+  echo "▶ Creating .env.local from template…"
+  cp .env.local.example .env.local
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  echo "▶ Bringing up local infra (Postgres + LocalStack) + migrations…"
+  bash scripts/infra-up
+else
+  echo "⚠ docker not found — skipping infra. Install Docker to run Postgres + LocalStack locally."
+fi
+
+echo "▶ Validating environment (varlock)…"
+bunx varlock load || echo "⚠ varlock reported issues (see above) — fill in .env.local as needed."
+
+cat <<'EOF'
+
+✅ Setup complete.
+
+   Local email:        bun run email:local  (resend-local, separate terminal)
+   Start the API:      bun run dev
+   Infra up / down:    bun run infra:up  ·  bun run infra:down
+   Run all tests:      bun run test        (unit + api)
+   Everything (CI):    bun run check
+
+   API docs:           http://localhost:5000/docs      (once dev is running)
+   Auth API docs:      http://localhost:5000/api/auth/reference
+   Captured email:     http://localhost:8005
+   S3 browser:         http://localhost:8083
+EOF

@@ -1,0 +1,15 @@
+# Git hooks (installed by `bun install` via the `prepare` script).
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx,js,mjs}"
+      run: bunx oxlint {staged_files}
+    format:
+      glob: "*.{ts,tsx,js,mjs,json,jsonc,md,yml,yaml}"
+      run: bunx oxfmt --check {staged_files}
+
+pre-push:
+  commands:
+    typecheck:
+      run: bun run typecheck

@@ -1,0 +1,16 @@
+node_modules
+coverage
+dist
+test
+docs
+scripts
+.github
+.claude
+.env.local
+.env.*.local
+env.d.ts
+docker-compose.yml
+Dockerfile
+.dockerignore
+*.md
+lefthook.yml

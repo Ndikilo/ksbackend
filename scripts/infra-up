@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Bring up all local infra with one command: Postgres + LocalStack (S3), then
+# apply migrations. Idempotent — safe to re-run. Ports are overridable:
+#   DB_PORT=5433 LOCALSTACK_PORT=4567 bun run infra:up
+# (match them in .env.local: DATABASE_URL / AWS_ENDPOINT_URL_S3).
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "✗ Docker is required but not found. Install Docker and retry." >&2
+  exit 1
+fi
+
+# Keep the compose host ports in sync with what the app actually connects to
+# (.env.local's DATABASE_URL / AWS_ENDPOINT_URL_S3), so `bun run infra:up` can
+# never bind a different port than the app expects. Explicit DB_PORT /
+# LOCALSTACK_PORT env still win.
+url_port() { # $1 = var name in .env.local -> its URL port (or empty)
+  grep -E "^$1=" .env.local 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" |
+    sed -nE 's#^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*:([0-9]+).*#\1#p'
+}
+if [ -f .env.local ]; then
+  db_derived="$(url_port DATABASE_URL)"
+  ls_derived="$(url_port AWS_ENDPOINT_URL_S3)"
+fi
+export DB_PORT="${DB_PORT:-${db_derived:-5432}}"
+export LOCALSTACK_PORT="${LOCALSTACK_PORT:-${ls_derived:-4566}}"
+
+echo "▶ Starting Postgres + LocalStack (db=${DB_PORT}, localstack=${LOCALSTACK_PORT})…"
+chmod +x scripts/localstack/*.sh 2>/dev/null || true
+docker compose up -d
+
+wait_healthy() {
+  local svc="$1"
+  local id
+  id="$(docker compose ps -q "$svc")"
+  if [ -z "$id" ]; then
+    echo "✗ service '$svc' did not start" >&2
+    exit 1
+  fi
+  echo "▶ Waiting for '$svc' to become healthy…"
+  local i=0
+  until [ "$(docker inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || echo starting)" = "healthy" ]; do
+    i=$((i + 1))
+    if [ "$i" -gt 90 ]; then
+      echo "✗ '$svc' did not become healthy in time. Logs:" >&2
+      docker compose logs --tail 30 "$svc" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  echo "  '$svc' is healthy."
+}
+
+wait_healthy db
+wait_healthy localstack
+
+echo "▶ Applying database migrations…"
+bun run db:migrate
+
+echo
+echo "✅ Local infra is up:"
+echo "   Postgres     localhost:${DB_PORT:-5432}"
+echo "   LocalStack   localhost:${LOCALSTACK_PORT:-4566}  (bucket: kanasante-dev)"
+echo "   S3 browser   http://localhost:${S3_UI_PORT:-8083}"
+echo
+echo "   Next:  bun run email:local   (resend-local, separate terminal)"
+echo "          bun run dev"

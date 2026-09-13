@@ -1,0 +1,18 @@
+DROP INDEX "consultation_offering_profile_type_duration_unique";--> statement-breakpoint
+CREATE INDEX "availability_exception_profile_date_active_idx" ON "availability_exception" USING btree ("practitioner_profile_id","date") WHERE "availability_exception"."deleted_at" is null;--> statement-breakpoint
+CREATE INDEX "availability_rule_profile_weekday_idx" ON "availability_rule" USING btree ("practitioner_profile_id","weekday");--> statement-breakpoint
+CREATE UNIQUE INDEX "payout_method_account_active_unique" ON "payout_method" USING btree ("practitioner_profile_id","account_number_hmac") WHERE "payout_method"."deleted_at" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "payout_method_one_default" ON "payout_method" USING btree ("practitioner_profile_id") WHERE "payout_method"."is_default" = true and "payout_method"."deleted_at" is null;--> statement-breakpoint
+CREATE INDEX "practitioner_qualification_profile_active_idx" ON "practitioner_qualification" USING btree ("practitioner_profile_id","sort_order") WHERE "practitioner_qualification"."deleted_at" is null;--> statement-breakpoint
+CREATE INDEX "practice_location_profile_active_idx" ON "practice_location" USING btree ("practitioner_profile_id") WHERE "practice_location"."deleted_at" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "practice_location_one_primary" ON "practice_location" USING btree ("practitioner_profile_id") WHERE "practice_location"."is_primary" = true and "practice_location"."deleted_at" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "consultation_offering_profile_type_duration_unique" ON "consultation_offering" USING btree ("practitioner_profile_id","consultation_type","duration_min") WHERE "consultation_offering"."deleted_at" is null;--> statement-breakpoint
+ALTER TABLE "availability_exception" ADD CONSTRAINT "availability_exception_time_order" CHECK ("availability_exception"."end_time" is null or "availability_exception"."start_time" is null or "availability_exception"."end_time" > "availability_exception"."start_time");--> statement-breakpoint
+ALTER TABLE "availability_exception" ADD CONSTRAINT "availability_exception_extra_has_times" CHECK ("availability_exception"."kind" <> 'extra' or ("availability_exception"."start_time" is not null and "availability_exception"."end_time" is not null));--> statement-breakpoint
+ALTER TABLE "availability_rule" ADD CONSTRAINT "availability_rule_weekday_range" CHECK ("availability_rule"."weekday" between 1 and 7);--> statement-breakpoint
+ALTER TABLE "availability_rule" ADD CONSTRAINT "availability_rule_time_order" CHECK ("availability_rule"."end_time" > "availability_rule"."start_time");--> statement-breakpoint
+ALTER TABLE "availability_rule" ADD CONSTRAINT "availability_rule_duration_range" CHECK ("availability_rule"."slot_duration_min" between 5 and 240);--> statement-breakpoint
+ALTER TABLE "availability_rule" ADD CONSTRAINT "availability_rule_validity_order" CHECK ("availability_rule"."valid_to" is null or "availability_rule"."valid_from" is null or "availability_rule"."valid_to" >= "availability_rule"."valid_from");--> statement-breakpoint
+ALTER TABLE "consultation_offering" ADD CONSTRAINT "consultation_offering_duration_range" CHECK ("consultation_offering"."duration_min" between 5 and 240);--> statement-breakpoint
+ALTER TABLE "consultation_offering" ADD CONSTRAINT "consultation_offering_price_nonnegative" CHECK ("consultation_offering"."price_xaf" >= 0);--> statement-breakpoint
+ALTER TABLE "practitioner_qualification" ADD CONSTRAINT "practitioner_qualification_year_range" CHECK ("practitioner_qualification"."year" between 1900 and 2200);

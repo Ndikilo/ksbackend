@@ -1,0 +1,67 @@
+# Local development infrastructure: Postgres + LocalStack (S3). Bring it all up
+# with `bun run infra:up`. Redis/KeyDB (optional, graceful-degradation — see
+# docs/SCAFFOLDING_PLAN.md §6a) is added later.
+#
+# Explicit project name so containers/volumes are namespaced `kanasante_*` and
+# never collide with another repo whose folder is also named `api`.
+name: kanasante
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanasante
+      POSTGRES_PASSWORD: kanasante
+      POSTGRES_DB: kanasante
+    ports:
+      # Host port is configurable: `DB_PORT=5433 bun run infra:up` if 5432
+      # is taken locally (then set DATABASE_URL accordingly in .env.local).
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - kanasante_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanasante -d kanasante"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3 emulator. Pinned to a Community image tag so it boots with NO auth token
+  # (the `:latest` tag can resolve to Pro on machines that also run LocalStack Pro).
+  # The init script under scripts/localstack/ auto-creates our bucket on ready.
+  localstack:
+    image: localstack/localstack:3.8.1
+    restart: unless-stopped
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+    ports:
+      # Configurable like DB_PORT: `LOCALSTACK_PORT=4567 bun run infra:up` if 4566
+      # is taken (then set AWS_ENDPOINT_URL_S3 accordingly in .env.local).
+      - "${LOCALSTACK_PORT:-4566}:4566"
+    volumes:
+      - ./scripts/localstack:/etc/localstack/init/ready.d
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls s3://kanasante-dev >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # A browser UI for the LocalStack bucket (LocalStack Community ships no UI of its
+  # own). Talks to LocalStack over the compose network; browse at localhost:8083.
+  s3-ui:
+    image: cloudlena/s3manager:latest
+    restart: unless-stopped
+    environment:
+      - ENDPOINT=localstack:4566
+      - USE_SSL=false
+      - ACCESS_KEY_ID=test
+      - SECRET_ACCESS_KEY=test
+      - REGION=us-east-1
+      - ALLOW_DELETE=true
+    ports:
+      - "${S3_UI_PORT:-8083}:8080"
+    depends_on:
+      - localstack
+
+volumes:
+  kanasante_pg:
