@@ -46,10 +46,17 @@ export const makeConsoleClient = (): EmailClient => ({
 export const EmailSenderResendLive = Layer.effect(
   EmailSender,
   Effect.gen(function* () {
-    const apiKey = Redacted.value(yield* Config.redacted("RESEND_API_KEY"));
+    // An unset key (e.g. a staging deploy before Resend is configured) must not
+    // block boot: fall back to logging emails instead of sending them.
+    const apiKey = Redacted.value(
+      yield* Config.redacted("RESEND_API_KEY").pipe(Config.withDefault(Redacted.make(""))),
+    );
     const from = yield* Config.string("EMAIL_FROM");
     const baseUrl = yield* Config.string("RESEND_BASE_URL").pipe(Config.withDefault(""));
-    const client = makeResendClient(apiKey, from, baseUrl === "" ? undefined : baseUrl);
+    const client =
+      apiKey === ""
+        ? makeConsoleClient()
+        : makeResendClient(apiKey, from, baseUrl === "" ? undefined : baseUrl);
     return {
       send: (message) =>
         Effect.tryPromise({

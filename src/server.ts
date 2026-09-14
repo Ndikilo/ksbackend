@@ -2,7 +2,7 @@ import { Config, Effect, Redacted } from "effect";
 import { createApp, setReady } from "./http/app";
 import { loadAuthOptions, makeAuth } from "./infra/auth";
 import { AppConfig } from "./infra/config";
-import { makeResendClient } from "./infra/email";
+import { makeConsoleClient, makeResendClient } from "./infra/email";
 import { makeRuntime } from "./runtime";
 
 const { appEnv, port, corsOrigins, defaultLocale } = await Effect.runPromise(AppConfig);
@@ -16,11 +16,21 @@ const runtime = makeRuntime(appEnv);
 const resendBaseUrl = await Effect.runPromise(
   Config.string("RESEND_BASE_URL").pipe(Config.withDefault("")),
 );
-const emailClient = makeResendClient(
-  Redacted.value(await Effect.runPromise(Config.redacted("RESEND_API_KEY"))),
-  await Effect.runPromise(Config.string("EMAIL_FROM")),
-  resendBaseUrl === "" ? undefined : resendBaseUrl,
+// An unset key (e.g. a staging deploy before Resend is configured) must not
+// block boot: log emails instead of sending them.
+const resendApiKey = Redacted.value(
+  await Effect.runPromise(
+    Config.redacted("RESEND_API_KEY").pipe(Config.withDefault(Redacted.make(""))),
+  ),
 );
+const emailClient =
+  resendApiKey === ""
+    ? makeConsoleClient()
+    : makeResendClient(
+        resendApiKey,
+        await Effect.runPromise(Config.string("EMAIL_FROM")),
+        resendBaseUrl === "" ? undefined : resendBaseUrl,
+      );
 
 const s3 = {
   bucket: await Effect.runPromise(Config.string("S3_BUCKET")),
