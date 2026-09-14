@@ -20,7 +20,8 @@ ENV NODE_ENV=production
 ENV APP_ENV=prod
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json .env.schema ./
+# tsconfig.json defines the "@/..." path alias Bun resolves at runtime.
+COPY package.json tsconfig.json .env.schema ./
 COPY src ./src
 COPY drizzle ./drizzle
 COPY scripts/migrate.ts scripts/start.sh ./scripts/
