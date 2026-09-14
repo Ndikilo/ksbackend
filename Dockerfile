@@ -5,8 +5,9 @@
 # In prod, APP_ENV=prod makes BETTER_AUTH_SECRET and DATABASE_URL required —
 # boot fails loudly if they're missing.
 #
-# Migrations are NOT run by this image. Run them as a separate release step
-# (with dev dependencies available):   bun install && bun run db:migrate
+# Migrations run on boot via scripts/start.sh (the drizzle folder is baked into
+# the image; scripts/migrate.ts uses only prod deps so no drizzle-kit needed).
+# The same flow works on any deploy platform that honors the CMD / docker command.
 
 FROM oven/bun:1.3-slim AS deps
 WORKDIR /app
@@ -21,8 +22,10 @@ ENV APP_ENV=prod
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json .env.schema ./
 COPY src ./src
+COPY drizzle ./drizzle
+COPY scripts/migrate.ts scripts/start.sh ./scripts/
 
 USER bun
 EXPOSE 3000
 
-CMD ["bunx", "varlock", "run", "--", "bun", "src/server.ts"]
+CMD ["bunx", "varlock", "run", "--", "sh", "scripts/start.sh"]

@@ -11,8 +11,8 @@
 # Move to APP_ENV=prod only once real values for S3 / RESEND / the DATA_*_KEY
 # pairs are in place.
 #
-# Migrations run automatically on every deploy/start via dockerCommand
-# (drizzle-kit is fetched with bunx since the prod image ships without dev deps).
+# Migrations run automatically on every deploy/start (scripts/start.sh:
+# a drizzle-orm migrator that needs no dev dependencies, then the server).
 
 services:
   - type: web
@@ -20,7 +20,7 @@ services:
     runtime: docker
     plan: free
     healthCheckPath: /livez
-    dockerCommand: bunx varlock run -- sh -c "bunx drizzle-kit migrate && bun src/server.ts"
+    dockerCommand: bunx varlock run -- sh scripts/start.sh
     envVars:
       - key: APP_ENV
         value: staging
