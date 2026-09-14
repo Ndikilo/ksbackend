@@ -25,6 +25,10 @@ COPY src ./src
 COPY drizzle ./drizzle
 COPY scripts/migrate.ts scripts/start.sh ./scripts/
 
+# varlock's codegen writes /app/env.d.ts at boot — the app dir must be writable
+# by the non-root runtime user.
+RUN chown bun:bun /app
+
 USER bun
 EXPOSE 3000
 
