@@ -3,7 +3,10 @@ coverage
 dist
 test
 docs
-scripts
+# Runtime entrypoints must ship in the image; keep the rest of scripts/ out.
+scripts/*
+!scripts/migrate.ts
+!scripts/start.sh
 .github
 .claude
 .env.local
