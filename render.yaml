@@ -1,0 +1,46 @@
+# Render blueprint — one-click test deployment of the KanaSanté API.
+#
+# Provisions:
+#   - ksbackend-api : this Dockerfile as a free web service (spins down when idle)
+#   - ksbackend-db  : a free Render Postgres (auto-wipes after 30 days on free)
+#
+# APP_ENV=staging: same real drivers as prod (Nominatim geocoder, S3 scanner,
+# better-auth rate limits) but without the hard prod requirements (real S3
+# bucket, RESEND_API_KEY, encryption keys) — those fall back to the committed
+# dev defaults, so the API boots with just a database and a signing secret.
+# Move to APP_ENV=prod only once real values for S3 / RESEND / the DATA_*_KEY
+# pairs are in place.
+#
+# Migrations run automatically on every deploy/start via dockerCommand
+# (drizzle-kit is fetched with bunx since the prod image ships without dev deps).
+
+services:
+  - type: web
+    name: ksbackend-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /livez
+    dockerCommand: bunx varlock run -- sh -c "bunx drizzle-kit migrate && bun src/server.ts"
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ksbackend-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      # CORS is irrelevant for the native mobile app; this allows Expo web dev.
+      - key: CORS_ORIGINS
+        value: http://localhost:8081
+      # Optional, add later in the dashboard to enable OTP emails:
+      #   RESEND_API_KEY  (free tier at resend.com; while using Resend's sandbox
+      #   sender also set EMAIL_FROM to `KanaSanté <onboarding@resend.dev>`)
+      #   BETTER_AUTH_URL (https://ksbackend-api.onrender.com — needed only for
+      #   flows that embed absolute links, e.g. password-reset emails)
+
+databases:
+  - name: ksbackend-db
+    plan: free
+    databaseName: kanasante
+    user: kanasante

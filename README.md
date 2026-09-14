@@ -1,5 +1,7 @@
 # kanasante API
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Ndikilo/ksbackend)
+
 A Hono + TypeScript API, fully **Effect**-based, backed by **Postgres** via **Drizzle**.
 Validated end-to-end with **Zod** (OpenAPI generated from the same schemas), auth via
 **better-auth**, structured logging via **evlog**, env/secrets via **varlock**,
@@ -8,7 +10,12 @@ linted/formatted with **oxc** (oxlint + oxfmt), tested with **Vitest**, on **Bun
 > **New here?** Read [`AGENTS.md`](./AGENTS.md) — the single source of truth for how this
 > repo is built and the conventions everyone (humans **and** AI agents) must follow.
 
-## Quickstart
+## Quickstart (hosted test deployment)
+
+Deploy this repo to Render with one click (free web service + Postgres, staging
+configuration, automatic migrations): see [`docs/deploy-render.md`](./docs/deploy-render.md).
+
+## Quickstart (local)
 
 Prerequisites: [Bun](https://bun.sh) ≥ 1.3, Docker, and the [AWS CLI](https://aws.amazon.com/cli/).
 
