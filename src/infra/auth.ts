@@ -4,7 +4,8 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, emailOTP, openAPI } from "better-auth/plugins";
 import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Config, Context, Effect, Redacted } from "effect";
+import { Config, ConfigError, Context, Effect, Redacted } from "effect";
+import * as Either from "effect/Either";
 import * as authSchema from "@/db/schema/auth";
 import { user } from "@/db/schema/auth";
 import { caregiverLink } from "@/db/schema/caregiver-link";
@@ -198,12 +199,37 @@ export const makeAuth = (options: AuthOptions) => {
 
 export type AuthInstance = ReturnType<typeof makeAuth>["instance"];
 
+/**
+ * Labeled, intentionally-insecure fallback used ONLY outside prod/staging
+ * (better-auth needs a ≥32-char secret to boot at all). Real environments
+ * require the BETTER_AUTH_SECRET env var.
+ */
+const DEV_INSECURE_SECRET = "dev-only-insecure-secret-change-in-production-000";
+
 /** Read auth config from the environment (via Effect Config — never process.env). */
 export const loadAuthOptions = Effect.gen(function* () {
   const databaseUrl = yield* Config.redacted("DATABASE_URL");
-  const secret = yield* Config.redacted("BETTER_AUTH_SECRET").pipe(
-    Config.withDefault(Redacted.make("dev-only-insecure-secret-change-in-production-000")),
-  );
+  const appEnv = yield* Config.string("APP_ENV").pipe(Config.withDefault("local"));
+  // Mirror server.ts: the deployed environment (staging) is held to prod
+  // standards. There the secret is REQUIRED — a missing var fails boot with a
+  // ConfigError naming it, and an empty/whitespace value is rejected the same way.
+  const requiresRealSecret = appEnv === "prod" || appEnv === "staging";
+  const secret = yield* requiresRealSecret
+    ? Config.redacted("BETTER_AUTH_SECRET").pipe(
+        Config.mapOrFail((value) =>
+          Redacted.value(value).trim() === ""
+            ? Either.left(
+                ConfigError.InvalidData(
+                  [],
+                  "BETTER_AUTH_SECRET must be set to a real secret when APP_ENV is prod/staging (generate: openssl rand -base64 32)",
+                ),
+              )
+            : Either.right(value),
+        ),
+      )
+    : Config.redacted("BETTER_AUTH_SECRET").pipe(
+        Config.withDefault(Redacted.make(DEV_INSECURE_SECRET)),
+      );
   const baseURL = yield* Config.string("BETTER_AUTH_URL").pipe(
     Config.withDefault("http://localhost:3000"),
   );
