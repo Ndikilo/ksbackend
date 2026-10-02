@@ -46,8 +46,8 @@ works against those. For true sign-up → OTP → verify flows:
 
 ## Seed reference + demo data
 
-With the database URL (Render dashboard → ksbackend-db → *External Database
-URL*):
+With the database URL (Render dashboard → ksbackend-db → _External Database
+URL_):
 
 ```bash
 # from a local clone of this repo (real env vars win over your local .env.local)
