@@ -19,7 +19,7 @@ services:
     name: ksbackend-api
     runtime: docker
     plan: free
-    healthCheckPath: /livez
+    healthCheckPath: /readyz
     dockerCommand: bunx varlock run -- sh scripts/start.sh
     envVars:
       - key: APP_ENV
@@ -30,14 +30,16 @@ services:
           property: connectionString
       - key: BETTER_AUTH_SECRET
         generateValue: true
-      # CORS is irrelevant for the native mobile app; this allows Expo web dev.
+      # The deployed https origin drives better-auth's absolute URLs and cookie
+      # flags (Secure cookies over https). Trusted for CORS alongside the Expo
+      # web dev origin; the native app itself needs no CORS.
+      - key: BETTER_AUTH_URL
+        value: https://ksbackend-api.onrender.com
       - key: CORS_ORIGINS
-        value: http://localhost:8081
+        value: https://ksbackend-api.onrender.com,http://localhost:8081
       # Optional, add later in the dashboard to enable OTP emails:
       #   RESEND_API_KEY  (free tier at resend.com; while using Resend's sandbox
       #   sender also set EMAIL_FROM to `KanaSanté <onboarding@resend.dev>`)
-      #   BETTER_AUTH_URL (https://ksbackend-api.onrender.com — needed only for
-      #   flows that embed absolute links, e.g. password-reset emails)
 
 databases:
   - name: ksbackend-db

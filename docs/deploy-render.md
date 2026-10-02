@@ -21,6 +21,8 @@ back to the committed dev defaults so the service boots with minimal setup.
    database automatically, then starts the API.
 4. When it's live, check `https://<your-app>.onrender.com/livez` →
    `{"status":"ok"}`. The API docs are at `/docs` (Scalar) and `/openapi.json`.
+   Render itself health-checks `/readyz`, which only reports ok once Postgres
+   answers — a deploy is marked healthy when the API can really serve traffic.
 
 Notes on the free tier:
 
@@ -73,7 +75,10 @@ is used as-is.
 
 - `APP_ENV=prod` + real values for: `BETTER_AUTH_SECRET`, `DATABASE_URL`,
   `RESEND_API_KEY`, `S3_BUCKET`/`S3_REGION`/AWS credentials,
-  `DATA_ENCRYPTION_KEY` + `DATA_HMAC_KEY` (`openssl rand -base64 32` each),
-  `BETTER_AUTH_URL`, `CORS_ORIGINS`.
+  `DATA_ENCRYPTION_KEY` + `DATA_HMAC_KEY` (`openssl rand -base64 32` each).
+- `BETTER_AUTH_URL` and `CORS_ORIGINS` are set by the blueprint to the deployed
+  https origin (`https://ksbackend-api.onrender.com` + Expo web dev); point them
+  at the final production origin (e.g. a custom domain) when you have one —
+  `BETTER_AUTH_URL` must stay https so session cookies get the Secure flag.
 - Render free Postgres is not HIPAA-grade; use a managed Postgres that matches
   your compliance requirements.
