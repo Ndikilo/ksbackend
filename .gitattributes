@@ -1,0 +1,2 @@
+# Normalize line endings: this repo is formatted with oxfmt (LF required).
+* text=auto eol=lf
