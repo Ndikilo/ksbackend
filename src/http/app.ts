@@ -28,6 +28,7 @@ import { registerReferenceRoutes } from "@/modules/reference/reference.routes";
 import { registerAvailabilityRoutes } from "@/modules/availability/availability.routes";
 import { registerProfileRoutes } from "@/modules/profile/profile.routes";
 import type { AppEnv, AppRuntime } from "./app-env";
+import { clientKey } from "./client-key";
 import { toErrorResponse } from "./error-mapper";
 import { registerMeRoute } from "./me.routes";
 
@@ -108,7 +109,7 @@ export const createApp = (
       await next();
       return;
     }
-    const key = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    const key = clientKey(c.req.header("x-forwarded-for"));
     const exit = await runtime.runPromiseExit(
       Effect.flatMap(RateLimiter, (limiter) => limiter.consume(key)),
     );
