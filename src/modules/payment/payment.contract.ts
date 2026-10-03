@@ -49,6 +49,14 @@ export const PaymentResponse = z
     refundedAt: z.string().nullable().openapi({
       description: "When the charge was refunded; set iff status is `refunded`.",
     }),
+    receiptNumber: z.string().nullable().openapi({
+      description:
+        "Receipt number (unique by construction — it embeds the payment id). Set iff the charge succeeded; it SURVIVES a later refund (paid-then-returned).",
+      example: "KS-0b9e6b1e-6f1a-4d3e-9d2a-6f1a4d3e9d2a",
+    }),
+    receiptIssuedAt: z.string().nullable().openapi({
+      description: "When the receipt was issued (ISO-8601); set iff `receiptNumber` is set.",
+    }),
     createdAt: z.string().openapi({ description: "ISO-8601 creation time." }),
   })
   .openapi("Payment");
@@ -56,6 +64,13 @@ export const PaymentResponse = z
 export const PaymentIdParam = z.object({
   id: z.uuid().openapi({
     description: "The payment id (from a checkout response).",
+    example: "0b9e6b1e-6f1a-4d3e-9d2a-6f1a4d3e9d2a",
+  }),
+});
+
+export const AppointmentIdParam = z.object({
+  appointmentId: z.uuid().openapi({
+    description: "The appointment whose latest charge (and receipt) to read.",
     example: "0b9e6b1e-6f1a-4d3e-9d2a-6f1a4d3e9d2a",
   }),
 });

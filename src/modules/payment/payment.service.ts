@@ -83,6 +83,15 @@ export interface PaymentServiceService {
     id: string,
   ) => Effect.Effect<Payment, NotFound | SqlError.SqlError>;
   /**
+   * The booking's latest charge — how the app finds the receipt data for an
+   * appointment (P5.T4): the payer only (404 otherwise and when no charge
+   * exists yet; the client reads "no charge" from that 404).
+   */
+  readonly getForAppointment: (
+    payerUserId: string,
+    appointmentId: string,
+  ) => Effect.Effect<Payment, NotFound | SqlError.SqlError>;
+  /**
    * Apply a provider-reported event (webhook payload, already
    * signature-verified and decoded). Idempotent: a duplicate or stale event
    * returns the unchanged row. Unknown providerChargeId → 404 (the provider
@@ -331,6 +340,25 @@ export const PaymentServiceLive = Layer.effect(
         return charge;
       });
 
+    const getForAppointment = (payerUserId: string, appointmentId: string) =>
+      Effect.gen(function* () {
+        const appointment = yield* appointments.findById(appointmentId);
+        // Owner-scoped 404: another patient's booking is indistinguishable
+        // from an unknown id (codebase-wide semantics).
+        if (appointment === undefined || appointment.patientUserId !== payerUserId) {
+          return yield* Effect.fail(new NotFound({ resource: "Appointment", id: appointmentId }));
+        }
+        // "No charge yet" is the same 404 shape — the client treats any 404
+        // here as "nothing to show" (the checkout flow mints the charge).
+        const charge = yield* payments.latestForAppointment(appointment.id);
+        if (charge === undefined) {
+          return yield* Effect.fail(new NotFound({ resource: "Payment", id: appointmentId }));
+        }
+        // Plain read on purpose: live status reconciliation belongs to `get`
+        // (the polling endpoint); this is the receipt/retrieval path.
+        return charge;
+      });
+
     const refund = (adminUserId: string, id: string, reason: string) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -373,6 +401,7 @@ export const PaymentServiceLive = Layer.effect(
     return {
       initiate,
       get,
+      getForAppointment,
       applyProviderEvent,
       refund,
       verifyWebhook: (rawBody, signatureHeader) =>

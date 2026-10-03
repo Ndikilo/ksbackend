@@ -43,7 +43,11 @@ const json = <T>(res: Response): Promise<T> => res.json() as Promise<T>;
  * - status polling reconciles on read (provider decided ⇒ same funnel as the
  *   webhook; provider trouble never fails the read);
  * - refund (admin-only): charge `refunded` + booking `cancelled` + slot freed
- *   atomically; double refund / non-succeeded refund → 409.
+ *   atomically; double refund / non-succeeded refund → 409;
+ * - receipts (P5.T4): a succeeded charge is stamped `receiptNumber = KS-<id>`
+ *   in the same guarded write; the receipt survives a refund; the booking's
+ *   charge (with receipt data) is retrievable by-appointment, payer-only, with
+ *   "unknown / not-yours / no-charge-yet" all the same 404.
  */
 
 type Script = {
@@ -596,5 +600,97 @@ describe("payments API (real DB)", () => {
   it("GET /v1/payments/{id} requires a session", async () => {
     const res = await harness.app.request(`/v1/payments/${crypto.randomUUID()}`);
     expect(res.status).toBe(401);
+  });
+
+  describe("receipts (P5.T4)", () => {
+    let adminCookie: string;
+
+    it("a succeeded charge is stamped with a receipt (number embeds the payment id); a refund does not erase it", async () => {
+      adminCookie = await harness.signUpAndVerify(
+        "receiptadmin@example.com",
+        "password12345",
+        "Adm In",
+      );
+      await harness.promoteToAdmin("receiptadmin@example.com");
+
+      const appointmentId = await bookAppointment();
+      const charge = await json<{ id: string }>(
+        await checkout({ appointmentId, provider: "momo", payerPhone: "+237690000000" }),
+      );
+      await webhookPost({ provider: "momo", providerChargeId: charge.id, status: "succeeded" });
+      const row = await paymentRow(charge.id);
+      expect(row?.receiptNumber).toBe(`KS-${charge.id}`);
+      expect(row?.receiptIssuedAt).not.toBeNull();
+
+      // The refund marks the money returned but the receipt survives
+      // (paid-then-returned — the CHECK allows a receipt on refunded rows).
+      const refundRes = await harness.post(
+        `/v1/payments/${charge.id}/refund`,
+        { reason: "receipt must survive" },
+        adminCookie,
+      );
+      expect(refundRes.status).toBe(200);
+      const after = await paymentRow(charge.id);
+      expect(after?.status).toBe("refunded");
+      expect(after?.receiptNumber).toBe(`KS-${charge.id}`);
+      expect(after?.receiptIssuedAt).not.toBeNull();
+    });
+
+    it("GET /v1/payments/by-appointment/{id} returns the charge with receipt data (payer only)", async () => {
+      const appointmentId = await bookAppointment();
+      const charge = await json<{ id: string }>(
+        await checkout({ appointmentId, provider: "orange_money", payerPhone: "+237690000000" }),
+      );
+      await webhookPost({
+        provider: "orange_money",
+        providerChargeId: charge.id,
+        status: "succeeded",
+      });
+      const res = await harness.app.request(`/v1/payments/by-appointment/${appointmentId}`, {
+        headers: { cookie: payerCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await json<{
+        id: string;
+        status: string;
+        receiptNumber: string | null;
+        receiptIssuedAt: string | null;
+        amountXaf: number;
+      }>(res);
+      expect(body.id).toBe(charge.id);
+      expect(body.status).toBe("succeeded");
+      expect(body.receiptNumber).toBe(`KS-${charge.id}`);
+      expect(body.receiptIssuedAt).not.toBeNull();
+      expect(body.amountXaf).toBe(5000);
+    });
+
+    it("by-appointment: another patient's booking, an unknown id, and a booking with no charge are ALL the same 404", async () => {
+      // Another patient's booking.
+      const foreignId = await bookAppointment();
+      const foreign = await harness.app.request(`/v1/payments/by-appointment/${foreignId}`, {
+        headers: { cookie: otherCookie },
+      });
+      expect(foreign.status).toBe(404);
+      expect((await json<{ error: { code: string } }>(foreign)).error.code).toBe("NOT_FOUND");
+
+      // Unknown appointment id.
+      const unknown = await harness.app.request(
+        `/v1/payments/by-appointment/${crypto.randomUUID()}`,
+        { headers: { cookie: payerCookie } },
+      );
+      expect(unknown.status).toBe(404);
+
+      // Own booking, never checked out — "no charge yet" is the same 404.
+      const noChargeId = await bookAppointment();
+      const noCharge = await harness.app.request(`/v1/payments/by-appointment/${noChargeId}`, {
+        headers: { cookie: payerCookie },
+      });
+      expect(noCharge.status).toBe(404);
+    });
+
+    it("by-appointment requires a session", async () => {
+      const res = await harness.app.request(`/v1/payments/by-appointment/${crypto.randomUUID()}`);
+      expect(res.status).toBe(401);
+    });
   });
 });

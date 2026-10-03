@@ -151,6 +151,14 @@ export const PaymentRepoLive = Layer.effect(
         const updates: Partial<typeof payment.$inferInsert> = { status, updatedAt: now };
         if (providerReference !== null) updates.providerReference = providerReference;
         if (failureReason !== null) updates.failureReason = failureReason;
+        // Receipt (P5.T4): stamped in the SAME guarded write that captures the
+        // money — a receipt number exists iff the charge succeeded (CHECK:
+        // receipt only when paid). The number embeds the payment id, so it is
+        // unique by construction; on refund it survives (paid-then-returned).
+        if (status === "succeeded") {
+          updates.receiptNumber = `KS-${id}`;
+          updates.receiptIssuedAt = now;
+        }
         return (
           db
             .update(payment)

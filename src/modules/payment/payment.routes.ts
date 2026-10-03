@@ -10,7 +10,13 @@ import { WEBHOOK_SIGNATURE_HEADER } from "@/infra/payments/webhook-signature";
 import type { AppEnv, AppRuntime } from "@/http/app-env";
 import { makeRun } from "@/http/run";
 import { ErrorResponse } from "@/http/schemas";
-import { CreatePaymentBody, PaymentIdParam, PaymentResponse, RefundBody } from "./payment.contract";
+import {
+  AppointmentIdParam,
+  CreatePaymentBody,
+  PaymentIdParam,
+  PaymentResponse,
+  RefundBody,
+} from "./payment.contract";
 import { PaymentService, WebhookEventSchema } from "./payment.service";
 
 const jsonBody = <T>(schema: T) => ({ content: { "application/json": { schema } } });
@@ -24,6 +30,8 @@ const toResponse = (p: Payment) => ({
   providerChargeId: p.providerChargeId,
   failureReason: p.failureReason,
   refundedAt: p.refundedAt === null ? null : p.refundedAt.toISOString(),
+  receiptNumber: p.receiptNumber,
+  receiptIssuedAt: p.receiptIssuedAt === null ? null : p.receiptIssuedAt.toISOString(),
   createdAt: p.createdAt.toISOString(),
 });
 
@@ -97,6 +105,35 @@ const getPayment = createRoute({
     404: {
       ...jsonBody(ErrorResponse),
       description: "No such payment, or the caller is not its payer.",
+    },
+  },
+});
+
+const getPaymentForAppointment = createRoute({
+  method: "get",
+  path: "/v1/payments/by-appointment/{appointmentId}",
+  tags: ["Payments"],
+  summary: "Read the booking's latest charge and its receipt data",
+  description: [
+    "How the app finds the charge (and receipt) for an appointment WITHOUT knowing the payment",
+    "id — the payer only: an unknown appointment, someone else's booking, and a booking with no",
+    'charge yet all return the SAME `404` (clients read "nothing to show" from it).',
+    "",
+    "This is a PLAIN read: live status reconciliation (poll-the-provider) lives on",
+    "`GET /v1/payments/{id}`. `receiptNumber`/`receiptIssuedAt` are set once the charge has",
+    "succeeded and stay set after a refund (paid-then-returned).",
+  ].join("\n"),
+  request: { params: AppointmentIdParam },
+  responses: {
+    200: {
+      ...jsonBody(PaymentResponse),
+      description: "The appointment's latest charge (receipt fields set once succeeded).",
+    },
+    401: { ...jsonBody(ErrorResponse), description: "No valid session." },
+    404: {
+      ...jsonBody(ErrorResponse),
+      description:
+        "No such appointment, the caller is not its booking patient, or no charge exists yet.",
     },
   },
 });
@@ -185,6 +222,21 @@ export const registerPaymentRoutes = (app: OpenAPIHono<AppEnv>, runtime: AppRunt
         const user = yield* CurrentUser;
         const service = yield* PaymentService;
         const charge = yield* service.get(user.id, c.req.valid("param").id);
+        return c.json(toResponse(charge), 200);
+      }),
+    ),
+  );
+
+  app.openapi(getPaymentForAppointment, (c) =>
+    runAuth(
+      c,
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+        const service = yield* PaymentService;
+        const charge = yield* service.getForAppointment(
+          user.id,
+          c.req.valid("param").appointmentId,
+        );
         return c.json(toResponse(charge), 200);
       }),
     ),

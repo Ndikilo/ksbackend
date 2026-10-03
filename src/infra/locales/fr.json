@@ -46,5 +46,14 @@
   "emails.verificationRejected.body": "Nous n'avons pas pu compléter votre vérification. Motif : {reason}. Veuillez corriger vos informations et soumettre à nouveau.",
   "emails.caregiverInvitation.subject": "Vous avez été invité sur KanaSanté",
   "emails.caregiverInvitation.heading": "Une invitation d'aidant",
-  "emails.caregiverInvitation.body": "Quelqu'un vous a invité à être rattaché comme sa personne à charge sur KanaSanté afin de l'aider à gérer vos soins. Utilisez ce code pour accepter : {token}"
+  "emails.caregiverInvitation.body": "Quelqu'un vous a invité à être rattaché comme sa personne à charge sur KanaSanté afin de l'aider à gérer vos soins. Utilisez ce code pour accepter : {token}",
+  "emails.receipt.subject": "Votre reçu KanaSanté {receiptNumber}",
+  "emails.receipt.heading": "Paiement reçu",
+  "emails.receipt.intro": "Merci — votre paiement a bien été reçu et votre rendez-vous est confirmé.",
+  "emails.receipt.receiptNumber": "N° de reçu",
+  "emails.receipt.amount": "Montant payé",
+  "emails.receipt.provider": "Moyen de paiement",
+  "emails.receipt.paidAt": "Payé le",
+  "emails.receipt.reference": "Référence",
+  "emails.receipt.closing": "Conservez ce reçu pour rapprocher le débit de votre relevé mobile money."
 }

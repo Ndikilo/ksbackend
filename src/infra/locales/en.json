@@ -46,5 +46,14 @@
   "emails.verificationRejected.body": "We couldn't complete your verification. Reason: {reason}. Please correct your details and resubmit.",
   "emails.caregiverInvitation.subject": "You've been invited on KanaSanté",
   "emails.caregiverInvitation.heading": "A caregiver invitation",
-  "emails.caregiverInvitation.body": "Someone invited you to be linked as their dependent on KanaSanté so they can help manage your care. Use this code to accept: {token}"
+  "emails.caregiverInvitation.body": "Someone invited you to be linked as their dependent on KanaSanté so they can help manage your care. Use this code to accept: {token}",
+  "emails.receipt.subject": "Your KanaSanté receipt {receiptNumber}",
+  "emails.receipt.heading": "Payment received",
+  "emails.receipt.intro": "Thank you — your payment has been received and your appointment is confirmed.",
+  "emails.receipt.receiptNumber": "Receipt no.",
+  "emails.receipt.amount": "Amount paid",
+  "emails.receipt.provider": "Payment method",
+  "emails.receipt.paidAt": "Paid on",
+  "emails.receipt.reference": "Reference",
+  "emails.receipt.closing": "Keep this receipt to reconcile the charge with your mobile-money statement."
 }
