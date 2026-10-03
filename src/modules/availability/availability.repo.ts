@@ -118,6 +118,28 @@ export interface AvailabilityRepoService {
     from: Date,
     to: Date,
   ) => Effect.Effect<ReadonlyArray<AvailabilitySlot>, SqlError.SqlError>;
+  /** One availability rule by id — materializing rule-expanded bookings (P4). */
+  readonly findRuleById: (
+    id: string,
+  ) => Effect.Effect<AvailabilityRule | undefined, SqlError.SqlError>;
+  /** One availability exception by id — materializing exception bookings (P4). */
+  readonly findExceptionById: (
+    id: string,
+  ) => Effect.Effect<AvailabilityException | undefined, SqlError.SqlError>;
+  /**
+   * Row-lock the (non-deleted) slot starting exactly at `startsAt` for a
+   * practitioner — the materialization lookup inside a booking transaction.
+   */
+  readonly lockSlotByWindow: (
+    practitionerProfileId: string,
+    startsAt: Date,
+  ) => Effect.Effect<AvailabilitySlot | undefined, SqlError.SqlError>;
+  /**
+   * Insert a materialized slot; a concurrent writer for the SAME window loses
+   * harmlessly (the unique window index turns the insert into a no-op) and the
+   * caller re-locks the winner's row.
+   */
+  readonly insertSlotIfFree: (row: NewSlotRow) => Effect.Effect<void, SqlError.SqlError>;
 }
 
 export class AvailabilityRepo extends Context.Tag("AvailabilityRepo")<
@@ -318,6 +340,59 @@ export const AvailabilityRepoLive = Layer.effect(
           )
           .orderBy(asc(availabilitySlot.startsAt))
           .pipe(Effect.map((rows) => rows.map(toDomain))),
+
+      findRuleById: (id) =>
+        db
+          .select()
+          .from(availabilityRule)
+          .where(eq(availabilityRule.id, id))
+          .limit(1)
+          .pipe(Effect.map((rows) => (rows[0] ? ruleToDomain(rows[0]) : undefined))),
+
+      findExceptionById: (id) =>
+        db
+          .select()
+          .from(availabilityException)
+          .where(and(eq(availabilityException.id, id), isNull(availabilityException.deletedAt)))
+          .limit(1)
+          .pipe(Effect.map((rows) => (rows[0] ? exceptionToDomain(rows[0]) : undefined))),
+
+      lockSlotByWindow: (practitionerProfileId, startsAt) =>
+        db
+          .select()
+          .from(availabilitySlot)
+          .where(
+            and(
+              eq(availabilitySlot.practitionerProfileId, practitionerProfileId),
+              eq(availabilitySlot.startsAt, startsAt),
+              isNull(availabilitySlot.deletedAt),
+            ),
+          )
+          .limit(1)
+          // Row lock held until the surrounding transaction ends — concurrent
+          // materializations of the same window serialize here / on the unique
+          // window index.
+          .for("update")
+          .pipe(Effect.map((rows) => (rows[0] ? toDomain(rows[0]) : undefined))),
+
+      insertSlotIfFree: (row) =>
+        db
+          .insert(availabilitySlot)
+          .values({
+            id: row.id,
+            practitionerProfileId: row.practitionerProfileId,
+            startsAt: row.startsAt,
+            endsAt: row.endsAt,
+            consultationTypes: [...row.consultationTypes],
+            locationId: row.locationId,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          })
+          // Lost races against a concurrent materialization (or an identical
+          // explicit slot) are FINE — the caller re-locks the winner's row.
+          .onConflictDoNothing()
+          .returning({ id: availabilitySlot.id })
+          .pipe(Effect.map(() => undefined)),
     } satisfies AvailabilityRepoService;
   }),
 );

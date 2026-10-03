@@ -10,6 +10,7 @@ import type { ConsultationType } from "@/domain/practitioner/practitioner";
 import { Forbidden, NotFound, ValidationFailed } from "@/domain/shared/errors";
 import { user } from "@/db/schema/auth";
 import { appointment as appointmentTable } from "@/db/schema/appointment";
+import { availabilityRule } from "@/db/schema/availability-rule";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { caregiverLink } from "@/db/schema/caregiver-link";
 import { consultationOffering } from "@/db/schema/consultation-offering";
@@ -17,6 +18,7 @@ import { dependent } from "@/db/schema/dependent";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { IdGeneratorLive } from "@/infra/ids";
+import { AvailabilityRepoLive } from "@/modules/availability/availability.repo";
 import { AppointmentRepoLive } from "@/modules/appointment/appointment.repo";
 import {
   AppointmentService,
@@ -110,6 +112,7 @@ describe("booking service (integration) — atomic slot lock", () => {
         Layer.provide(
           Layer.mergeAll(
             AppointmentRepoLive.pipe(Layer.provide(Database)),
+            AvailabilityRepoLive.pipe(Layer.provide(Database)),
             OfferingRepoLive.pipe(Layer.provide(Database)),
             DependentRepoLive.pipe(Layer.provide(Database)),
             PractitionerRepoLive.pipe(Layer.provide(Database)),
@@ -265,5 +268,98 @@ describe("booking service (integration) — atomic slot lock", () => {
     expect(appointment.consultationType).toBe("in_person");
     expect(appointment.priceXaf).toBe(5000);
     expect(appointment.cancelledAt).toBeNull();
+  });
+
+  // Rule-expanded windows from the public availability are VIRTUAL — booking
+  // one materializes exactly one availability_slot row (P4.T1 enabler); the
+  // unique window index makes concurrent materializations idempotent.
+  describe("virtual rule windows (public slot keys)", () => {
+    let ruleId: string;
+    let windowStartsAt: Date;
+
+    beforeAll(async () => {
+      // A weekly rule with 60-min slots starting 09:00 Douala time (= 08:00Z,
+      // the schedule's fixed +60min offset) on ONE weekday: a date 7 days out.
+      const date = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+      const weekday = new Date(Date.parse(`${date}T00:00:00.000Z`)).getUTCDay();
+      ruleId = crypto.randomUUID();
+      await db.insert(availabilityRule).values({
+        id: ruleId,
+        practitionerProfileId: practitionerId,
+        weekday,
+        startTime: "09:00:00",
+        endTime: "17:00:00",
+        slotDurationMin: 60,
+        consultationTypes: ["in_person"],
+        timezone: "Africa/Douala",
+      });
+      // First expansion slot of that day: 09:00 Douala − 60min = 08:00Z.
+      windowStartsAt = new Date(Date.parse(`${date}T08:00:00.000Z`));
+    });
+
+    const keyFor = (startsAt: Date): string => `rule:${ruleId}:${startsAt.toISOString()}`;
+
+    it("two concurrent bookings on one rule window materialize ONE slot; exactly one wins", async () => {
+      const key = keyFor(windowStartsAt);
+
+      const [first, second] = await runtime.runPromise(
+        Effect.all(
+          [
+            bookExit(patientA, { slotId: key, offeringId }),
+            bookExit(patientB, { slotId: key, offeringId }),
+          ],
+          {
+            concurrency: 2,
+          },
+        ),
+      );
+
+      expect([first, second].filter(Exit.isSuccess)).toHaveLength(1);
+      const loser = Exit.isSuccess(first) ? second : first;
+      expect(failureOf(loser)).toBeInstanceOf(SlotTaken);
+
+      // Exactly one materialized row, carrying the rule's window + types.
+      const slots = await db
+        .select()
+        .from(availabilitySlot)
+        .where(eq(availabilitySlot.practitionerProfileId, practitionerId));
+      const materialized = slots.filter(
+        (slot) => slot.startsAt.getTime() === windowStartsAt.getTime(),
+      );
+      expect(materialized).toHaveLength(1);
+      expect(materialized[0]?.endsAt.getTime()).toBe(windowStartsAt.getTime() + 60 * 60_000);
+      expect(materialized[0]?.status).toBe("booked");
+      expect(materialized[0]?.consultationTypes).toEqual(["in_person"]);
+
+      // The appointment points at the materialized slot.
+      const rows = await db.select().from(appointmentTable);
+      const winners = rows.filter((row) => row.startsAt.getTime() === windowStartsAt.getTime());
+      expect(winners).toHaveLength(1);
+      expect(winners[0]?.slotId).toBe(materialized[0]?.id);
+    });
+
+    it("a second booking on an already-materialized window is SlotTaken — no second row", async () => {
+      const key = keyFor(new Date(windowStartsAt.getTime() + 60 * 60_000));
+      const winner = await runtime.runPromise(book(patientA, { slotId: key, offeringId }));
+      expect(winner.status).toBe("pending");
+
+      const loser = await runtime.runPromise(bookExit(patientB, { slotId: key, offeringId }));
+      expect(failureOf(loser)).toBeInstanceOf(SlotTaken);
+    });
+
+    it("an unknown rule or malformed key is a NotFound, not a crash", async () => {
+      const unknownRule = await runtime.runPromise(
+        bookExit(patientA, {
+          slotId: `rule:${crypto.randomUUID()}:${windowStartsAt.toISOString()}`,
+          offeringId,
+        }),
+      );
+      expect(failureOf(unknownRule)).toBeInstanceOf(NotFound);
+
+      const malformed = await runtime.runPromise(
+        bookExit(patientA, { slotId: "not-a-slot-key", offeringId }),
+      );
+      expect(failureOf(malformed)).toBeInstanceOf(NotFound);
+    });
   });
 });

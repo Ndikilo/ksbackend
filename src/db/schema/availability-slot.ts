@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, pgTable, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { availabilitySlotStatusEnum, consultationTypeEnum } from "./enums";
 import { practiceLocation } from "./practice-location";
 import { practitionerProfile } from "./practitioner-profile";
@@ -33,6 +33,14 @@ export const availabilitySlot = pgTable(
     index("availability_open_future_idx")
       .on(t.practitionerProfileId, t.startsAt)
       .where(sql`${t.status} = 'open' and ${t.deletedAt} is null`),
+    // ONE live slot per (practitioner, start) — the idempotency anchor for
+    // booking-time materialization of rule/exception windows (P4): two
+    // concurrent bookings expanding the same virtual window race the insert,
+    // the loser re-locks the winner's row. Booked/cancelled rows still count,
+    // so a taken time can't be re-materialized as fresh.
+    uniqueIndex("availability_slot_window_unique")
+      .on(t.practitionerProfileId, t.startsAt)
+      .where(sql`${t.deletedAt} is null`),
     check("availability_slot_time_order", sql`${t.endsAt} > ${t.startsAt}`),
   ],
 );

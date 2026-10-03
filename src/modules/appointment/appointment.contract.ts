@@ -7,9 +7,10 @@ import { paginated } from "@/http/schemas";
 /** Booking request: which slot, which offering, optionally for whom. */
 export const BookAppointmentBody = z
   .object({
-    slotId: z.uuid().openapi({
-      description: "The availability slot to book (from the practitioner's public availability).",
-      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    slotId: z.string().min(1).max(200).openapi({
+      description:
+        "A slot reference from the practitioner's public availability — the slot `key` (e.g. `rule:{id}:{startsAt}` for a recurring window, `exception:…` for an extra day, `explicit:{id}`) or a bare availability-slot id. Virtual rule/exception windows materialize into real slots on first booking.",
+      example: "explicit:3fa85f64-5717-4562-b3fc-2c963f66afa6",
     }),
     offeringId: z.uuid().openapi({
       description:
@@ -26,8 +27,9 @@ export const BookAppointmentBody = z
 /** Reschedule request: the only knob is the new slot — the offering is kept. */
 export const RescheduleAppointmentBody = z
   .object({
-    slotId: z.uuid().openapi({
-      description: "The new availability slot. It must belong to the same practitioner.",
+    slotId: z.string().min(1).max(200).openapi({
+      description:
+        "The new slot reference (same public availability `key` format). It must belong to the same practitioner.",
     }),
   })
   .openapi("RescheduleAppointment");

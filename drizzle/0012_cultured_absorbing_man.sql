@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "availability_slot_window_unique" ON "availability_slot" USING btree ("practitioner_profile_id","starts_at") WHERE "availability_slot"."deleted_at" is null;

@@ -8,20 +8,43 @@ import type {
   BookAppointmentInput,
   BookingPolicy,
 } from "@/domain/appointment/appointment";
+import type { SlotStatus } from "@/domain/availability/availability";
+import {
+  exceptionWindow,
+  parseSlotKey,
+  ruleWindow,
+  type VirtualWindow,
+} from "@/domain/availability/schedule";
 import {
   AppointmentStarted,
   AppointmentStateInvalid,
   SlotTaken,
 } from "@/domain/appointment/errors";
 import { judgeCancellation, judgeReschedule } from "@/domain/appointment/policy";
+import type { ConsultationType } from "@/domain/practitioner/practitioner";
 import { Forbidden, NotFound, ValidationFailed } from "@/domain/shared/errors";
 import { IdGenerator } from "@/infra/ids";
 import type { Role } from "@/infra/auth";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
+import { AvailabilityRepo } from "@/modules/availability/availability.repo";
 import { DependentRepo } from "@/modules/dependent/dependent.repo";
 import { OfferingRepo } from "@/modules/offering/offering.repo";
 import { PractitionerRepo } from "@/modules/practitioner/practitioner.repo";
 import { AppointmentRepo, type AppointmentCursor } from "./appointment.repo";
+
+/**
+ * A slot row ready for the booking coherence checks — the shape both a real
+ * `availability_slot` row and a freshly materialized virtual window share.
+ */
+type BookableSlot = {
+  readonly id: string;
+  readonly practitionerProfileId: string;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+  readonly consultationTypes: ReadonlyArray<ConsultationType>;
+  readonly status: SlotStatus;
+  readonly deletedAt: Date | null;
+};
 
 export type AppointmentPage = {
   readonly data: ReadonlyArray<Appointment>;
@@ -157,6 +180,7 @@ export const AppointmentServiceLive = Layer.effect(
   AppointmentService,
   Effect.gen(function* () {
     const repo = yield* AppointmentRepo;
+    const availability = yield* AvailabilityRepo;
     const offerings = yield* OfferingRepo;
     const dependents = yield* DependentRepo;
     const practitioners = yield* PractitionerRepo;
@@ -164,6 +188,65 @@ export const AppointmentServiceLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     const now: Effect.Effect<Date> = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms));
+
+    /**
+     * Resolve a public slot key (or bare slot id) into a LOCKED, bookable slot
+     * row inside the caller's transaction. Rule/exception windows from the
+     * public availability are VIRTUAL — the first booking materializes the
+     * availability_slot row (the unique window index makes concurrent
+     * materializations idempotent; the loser re-locks the winner's row), after
+     * which every P3 invariant applies unchanged. undefined = unknown
+     * key/rule/exception (the caller 404s).
+     */
+    const resolveBookableSlot = (
+      key: string,
+    ): Effect.Effect<BookableSlot | undefined, SqlError.SqlError> =>
+      Effect.gen(function* () {
+        const ref = parseSlotKey(key);
+        if (ref === undefined) return undefined;
+        if (ref.kind === "explicit") {
+          return yield* repo.lockSlotById(ref.slotId);
+        }
+        const at = yield* now;
+        const materialize = (
+          practitionerProfileId: string,
+          startsAt: Date,
+          window: VirtualWindow,
+        ): Effect.Effect<BookableSlot | undefined, SqlError.SqlError> =>
+          Effect.gen(function* () {
+            const existing = yield* availability.lockSlotByWindow(practitionerProfileId, startsAt);
+            // The window lookup already filters soft-deleted rows.
+            if (existing) return { ...existing, deletedAt: null };
+            yield* availability.insertSlotIfFree({
+              id: yield* ids.next,
+              practitionerProfileId,
+              startsAt,
+              endsAt: window.endsAt,
+              consultationTypes: window.consultationTypes,
+              locationId: window.locationId,
+              createdAt: at,
+              updatedAt: at,
+            });
+            const winner = yield* availability.lockSlotByWindow(practitionerProfileId, startsAt);
+            return winner === undefined ? undefined : { ...winner, deletedAt: null };
+          });
+        if (ref.kind === "rule") {
+          const rule = yield* availability.findRuleById(ref.ruleId);
+          if (rule === undefined) return undefined;
+          return yield* materialize(
+            rule.practitionerProfileId,
+            ref.startsAt,
+            ruleWindow(rule, ref.startsAt),
+          );
+        }
+        const exception = yield* availability.findExceptionById(ref.exceptionId);
+        if (exception === undefined) return undefined;
+        return yield* materialize(
+          exception.practitionerProfileId,
+          ref.startsAt,
+          exceptionWindow(exception),
+        );
+      });
 
     /**
      * Resolve the caller's practitioner profile for practitioner-only
@@ -233,8 +316,10 @@ export const AppointmentServiceLive = Layer.effect(
 
         return yield* sql.withTransaction(
           Effect.gen(function* () {
-            // Serialization point: concurrent bookings on this slot queue here.
-            const slot = yield* repo.lockSlotById(input.slotId);
+            // Serialization point: concurrent bookings on this slot queue here
+            // (explicit rows lock directly; rule/exception windows materialize
+            // first — still exactly one slot row per window).
+            const slot = yield* resolveBookableSlot(input.slotId);
             if (!slot) {
               return yield* Effect.fail(
                 new NotFound({ resource: "Availability slot", id: input.slotId }),
@@ -421,8 +506,8 @@ export const AppointmentServiceLive = Layer.effect(
 
           // Lock the target slot: bookings and other reschedules queue here,
           // so the winner of a race takes the slot and the loser sees it no
-          // longer open (SlotTaken).
-          const slot = yield* repo.lockSlotById(newSlotId);
+          // longer open (SlotTaken). Public slot keys resolve like in booking.
+          const slot = yield* resolveBookableSlot(newSlotId);
           if (!slot) {
             return yield* Effect.fail(
               new NotFound({ resource: "Availability slot", id: newSlotId }),

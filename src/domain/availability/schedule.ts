@@ -1,3 +1,5 @@
+import type { ConsultationType } from "@/domain/practitioner/practitioner";
+
 import type {
   AvailabilityException,
   AvailabilityRule,
@@ -143,3 +145,64 @@ export const expandSchedule = (
   }
   return selected.toSorted((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
 };
+
+// --- Public slot keys → bookable windows (the booking engine's entry) -------
+
+/**
+ * A parsed public slot key (P4 booking flow): explicit slots resolve to their
+ * persisted row; rule/exception windows are VIRTUAL — they materialize into an
+ * availability_slot row on first booking.
+ */
+export type SlotKeyRef =
+  | { readonly kind: "explicit"; readonly slotId: string }
+  | { readonly kind: "rule"; readonly ruleId: string; readonly startsAt: Date }
+  | { readonly kind: "exception"; readonly exceptionId: string; readonly startsAt: Date };
+
+/** Parse the opaque public key back into its parts; undefined = unbookable key. */
+export const parseSlotKey = (key: string): SlotKeyRef | undefined => {
+  const kindEnd = key.indexOf(":");
+  if (kindEnd === -1) return undefined;
+  const kind = key.slice(0, kindEnd);
+  const rest = key.slice(kindEnd + 1);
+  if (kind === "explicit") {
+    return rest === "" ? undefined : { kind: "explicit", slotId: rest };
+  }
+  // The timestamp itself contains colons — split only the id off the front.
+  const idEnd = rest.indexOf(":");
+  if (idEnd === -1) return undefined;
+  const id = rest.slice(0, idEnd);
+  const startsAt = new Date(rest.slice(idEnd + 1));
+  if (id === "" || Number.isNaN(startsAt.getTime())) return undefined;
+  if (kind === "rule") return { kind: "rule", ruleId: id, startsAt };
+  if (kind === "exception") return { kind: "exception", exceptionId: id, startsAt };
+  return undefined;
+};
+
+/** The concrete window a virtual (rule/exception) key names — what a booking materializes. */
+export type VirtualWindow = {
+  readonly endsAt: Date;
+  readonly consultationTypes: ReadonlyArray<ConsultationType>;
+  readonly locationId: string | null;
+};
+
+/** The concrete window a rule-expanded key names (mirrors expandSchedule exactly). */
+export const ruleWindow = (
+  rule: Pick<AvailabilityRule, "slotDurationMin" | "consultationTypes" | "locationId">,
+  startsAt: Date,
+): VirtualWindow => ({
+  endsAt: new Date(startsAt.getTime() + rule.slotDurationMin * 60_000),
+  consultationTypes: rule.consultationTypes,
+  locationId: rule.locationId,
+});
+
+/** The concrete window an extra-exception key names (mirrors expandSchedule exactly). */
+export const exceptionWindow = (
+  exception: Pick<
+    AvailabilityException,
+    "date" | "startTime" | "endTime" | "consultationTypes" | "locationId"
+  >,
+): VirtualWindow => ({
+  endsAt: endAtTime(exception.date, exception.startTime ?? "00:00", exception.endTime ?? "00:00"),
+  consultationTypes: exception.consultationTypes ?? [],
+  locationId: exception.locationId,
+});
