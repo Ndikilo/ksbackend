@@ -11,6 +11,8 @@ import {
   AppointmentResponse,
   AppointmentsPage,
   BookAppointmentBody,
+  BookingPolicyBody,
+  BookingPolicyResponse,
   ListAppointmentsQuery,
   RescheduleAppointmentBody,
 } from "./appointment.contract";
@@ -188,6 +190,46 @@ const cancel = createRoute({
   },
 });
 
+const getPolicy = createRoute({
+  method: "get",
+  path: "/v1/practitioners/me/booking-policy",
+  tags: ["Appointments"],
+  summary: "Read your booking policy",
+  description: [
+    "The cancellation policy applied to NEW bookings: the notice window (hours) and the",
+    "late-cancellation fee (XAF). Existing appointments keep the snapshot taken when they were",
+    "made. Requires the doctor/nurse role (`403`) and a practitioner profile (`404`). Defaults:",
+    "24h / 0 XAF.",
+  ].join(" "),
+  responses: {
+    200: { ...jsonBody(BookingPolicyResponse), description: "The current policy." },
+    401: { ...jsonBody(ErrorResponse), description: "No valid session." },
+    403: { ...jsonBody(ErrorResponse), description: "Caller is not a practitioner." },
+    404: { ...jsonBody(ErrorResponse), description: "No practitioner profile." },
+  },
+});
+
+const putPolicy = createRoute({
+  method: "put",
+  path: "/v1/practitioners/me/booking-policy",
+  tags: ["Appointments"],
+  summary: "Replace your booking policy",
+  description: [
+    "Set the cancellation notice window (0–720 hours) and the late-cancellation fee (XAF) for",
+    "NEW bookings — a patient cancelling with less time remaining than the window is late and",
+    "owes the fee. Takes effect immediately for future bookings; existing appointments are",
+    "judged by the snapshot they accepted. Idempotent full replace.",
+  ].join(" "),
+  request: { body: jsonBody(BookingPolicyBody) },
+  responses: {
+    200: { ...jsonBody(BookingPolicyResponse), description: "The stored policy." },
+    401: { ...jsonBody(ErrorResponse), description: "No valid session." },
+    403: { ...jsonBody(ErrorResponse), description: "Caller is not a practitioner." },
+    404: { ...jsonBody(ErrorResponse), description: "No practitioner profile." },
+    422: { ...jsonBody(ErrorResponse), description: "Out-of-range window or negative fee." },
+  },
+});
+
 export const registerAppointmentRoutes = (app: OpenAPIHono<AppEnv>, runtime: AppRuntime): void => {
   const { runAuth } = makeRun(runtime);
 
@@ -257,6 +299,28 @@ export const registerAppointmentRoutes = (app: OpenAPIHono<AppEnv>, runtime: App
         const service = yield* AppointmentService;
         const cancelled = yield* service.cancel(user, c.req.valid("param").id);
         return c.json(toResponse(cancelled), 200);
+      }),
+    ),
+  );
+
+  app.openapi(getPolicy, (c) =>
+    runAuth(
+      c,
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+        const service = yield* AppointmentService;
+        return c.json(yield* service.getPolicy(user), 200);
+      }),
+    ),
+  );
+
+  app.openapi(putPolicy, (c) =>
+    runAuth(
+      c,
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+        const service = yield* AppointmentService;
+        return c.json(yield* service.putPolicy(user, c.req.valid("json")), 200);
       }),
     ),
   );

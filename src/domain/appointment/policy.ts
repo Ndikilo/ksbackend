@@ -36,3 +36,62 @@ export const isLateCancellation = (startsAt: Date, noticeHours: number, now: Dat
   const msRemaining = startsAt.getTime() - now.getTime();
   return msRemaining < noticeHours * 3_600_000;
 };
+
+/**
+ * The cancellation rules engine. Pure: given the appointment's booking-time
+ * snapshot (state, start, the practitioner's notice window + fee as of
+ * booking) and WHO is cancelling, yields the decision the service must apply.
+ * The window never REJECTS a patient cancellation — inside it the cancellation
+ * is allowed but LATE and carries the snapshot fee (late-cancel tracking);
+ * practitioner-initiated cancellations are never late, because the fee exists
+ * to protect the practitioner's time, not the patient's.
+ */
+export type CancellationJudgement =
+  | { readonly kind: "not-actionable"; readonly current: AppointmentStatus }
+  | { readonly kind: "started" }
+  | { readonly kind: "on-time" }
+  | { readonly kind: "late"; readonly feeXaf: number };
+
+export const judgeCancellation = (
+  appointment: {
+    readonly status: AppointmentStatus;
+    readonly startsAt: Date;
+    readonly cancellationNoticeHours: number;
+    readonly cancellationFeeXaf: number;
+  },
+  now: Date,
+  byPatient: boolean,
+): CancellationJudgement => {
+  if (!isActionableStatus(appointment.status)) {
+    return { kind: "not-actionable", current: appointment.status };
+  }
+  if (hasStarted(appointment.startsAt, now)) {
+    return { kind: "started" };
+  }
+  return byPatient &&
+    isLateCancellation(appointment.startsAt, appointment.cancellationNoticeHours, now)
+    ? { kind: "late", feeXaf: appointment.cancellationFeeXaf }
+    : { kind: "on-time" };
+};
+
+/**
+ * The reschedule half of the engine: while the appointment is actionable and
+ * has not started it may be moved — the notice window does NOT gate
+ * rescheduling (moving INTO more time is always an improvement; fees apply to
+ * cancellations only). Everything else (target-slot fit) is judged by the
+ * booking coherence rules, not by policy.
+ */
+export type RescheduleJudgement =
+  | { readonly kind: "not-actionable"; readonly current: AppointmentStatus }
+  | { readonly kind: "started" }
+  | { readonly kind: "allowed" };
+
+export const judgeReschedule = (
+  appointment: { readonly status: AppointmentStatus; readonly startsAt: Date },
+  now: Date,
+): RescheduleJudgement => {
+  if (!isActionableStatus(appointment.status)) {
+    return { kind: "not-actionable", current: appointment.status };
+  }
+  return hasStarted(appointment.startsAt, now) ? { kind: "started" } : { kind: "allowed" };
+};

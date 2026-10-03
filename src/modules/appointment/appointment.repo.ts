@@ -3,9 +3,14 @@ import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import { and, desc, eq, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 
-import type { Appointment, AppointmentStatus } from "@/domain/appointment/appointment";
+import type {
+  Appointment,
+  AppointmentStatus,
+  BookingPolicy,
+} from "@/domain/appointment/appointment";
 import { appointment } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
+import { practitionerProfile } from "@/db/schema/practitioner-profile";
 
 type Row = typeof appointment.$inferSelect;
 type SlotRow = typeof availabilitySlot.$inferSelect;
@@ -102,6 +107,19 @@ export interface AppointmentRepoService {
       readonly now: Date;
     },
   ) => Effect.Effect<Appointment, SqlError.SqlError>;
+  /**
+   * The practitioner's booking policy (P3.T5) — the values stamped onto NEW
+   * bookings. FK-guaranteed to exist for any real slot/practitioner; a missing
+   * row is a broken invariant → defect.
+   */
+  readonly policyForPractitioner: (
+    practitionerProfileId: string,
+  ) => Effect.Effect<BookingPolicy, SqlError.SqlError>;
+  /** Replace the practitioner's booking policy; returns the stored values. */
+  readonly updatePolicy: (
+    practitionerProfileId: string,
+    values: { readonly noticeHours: number; readonly feeXaf: number; readonly now: Date },
+  ) => Effect.Effect<BookingPolicy | undefined, SqlError.SqlError>;
 }
 
 export class AppointmentRepo extends Context.Tag("AppointmentRepo")<
@@ -266,6 +284,36 @@ export const AppointmentRepoLive = Layer.effect(
                   ),
             ),
           ),
+
+      policyForPractitioner: (practitionerProfileId) =>
+        db
+          .select({
+            noticeHours: practitionerProfile.cancellationNoticeHours,
+            feeXaf: practitionerProfile.cancellationFeeXaf,
+          })
+          .from(practitionerProfile)
+          .where(eq(practitionerProfile.id, practitionerProfileId))
+          .limit(1)
+          .pipe(
+            Effect.flatMap((rows) =>
+              rows[0]
+                ? Effect.succeed(rows[0])
+                : Effect.dieMessage(
+                    `policyForPractitioner: practitioner profile ${practitionerProfileId} not found (FK violation).`,
+                  ),
+            ),
+          ),
+
+      updatePolicy: (practitionerProfileId, { noticeHours, feeXaf, now }) =>
+        db
+          .update(practitionerProfile)
+          .set({ cancellationNoticeHours: noticeHours, cancellationFeeXaf: feeXaf, updatedAt: now })
+          .where(eq(practitionerProfile.id, practitionerProfileId))
+          .returning({
+            noticeHours: practitionerProfile.cancellationNoticeHours,
+            feeXaf: practitionerProfile.cancellationFeeXaf,
+          })
+          .pipe(Effect.map((rows) => rows[0])),
     };
   }),
 );

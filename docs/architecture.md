@@ -55,6 +55,14 @@ ACTIVE (pending/confirmed) appointment per slot — double-booking is impossible
 the booking service additionally locks the slot row in a transaction (P3.T2). Every FK column is
 indexed (P0.T7 discipline); lists read via `(owner, starts_at)` composite indexes.
 
+The cancellation policy itself is practitioner-CONFIGURABLE (P3.T5):
+`practitioner_profile.cancellation_notice_hours` (0–720, default 24) and
+`.cancellation_fee_xaf` (default 0), read/replace via
+`GET|PUT /v1/practitioners/me/booking-policy`. Booking stamps the values in force onto the new
+`appointment` row, and the pure rules engine (`src/domain/appointment/policy.ts`) judges every
+cancel/reschedule by that snapshot: patient cancels inside the window are allowed but marked
+`lateCancellation` (fee applies at settlement); practitioner-initiated cancels are never late.
+
 ## Swappable backends (cache, rate limiting)
 
 `Cache` and `RateLimiter` (`src/infra/`) are single tags with in-process implementations —

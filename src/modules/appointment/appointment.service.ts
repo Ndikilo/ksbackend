@@ -6,13 +6,14 @@ import type {
   Appointment,
   AppointmentStatus,
   BookAppointmentInput,
+  BookingPolicy,
 } from "@/domain/appointment/appointment";
 import {
   AppointmentStarted,
   AppointmentStateInvalid,
   SlotTaken,
 } from "@/domain/appointment/errors";
-import { hasStarted, isActionableStatus, isLateCancellation } from "@/domain/appointment/policy";
+import { judgeCancellation, judgeReschedule } from "@/domain/appointment/policy";
 import { Forbidden, NotFound, ValidationFailed } from "@/domain/shared/errors";
 import { IdGenerator } from "@/infra/ids";
 import type { Role } from "@/infra/auth";
@@ -21,14 +22,6 @@ import { DependentRepo } from "@/modules/dependent/dependent.repo";
 import { OfferingRepo } from "@/modules/offering/offering.repo";
 import { PractitionerRepo } from "@/modules/practitioner/practitioner.repo";
 import { AppointmentRepo, type AppointmentCursor } from "./appointment.repo";
-
-/**
- * Cancellation policy snapshot defaults stamped onto every booking until
- * P3.T5 makes the policy practitioner-configurable (the appointment row keeps
- * the values that were in force at booking time either way).
- */
-const BOOKING_CANCELLATION_NOTICE_HOURS = 24;
-const BOOKING_CANCELLATION_FEE_XAF = 0;
 
 export type AppointmentPage = {
   readonly data: ReadonlyArray<Appointment>;
@@ -137,12 +130,28 @@ export interface AppointmentServiceService {
     | AppointmentStarted
     | SqlError.SqlError
   >;
+  /**
+   * The caller's own booking policy (P3.T5): the notice window + late fee
+   * stamped onto NEW bookings. Practitioner-only (403 without the role, 404
+   * without a practitioner profile).
+   */
+  readonly getPolicy: (
+    caller: AppointmentCaller,
+  ) => Effect.Effect<BookingPolicy, Forbidden | NotFound | SqlError.SqlError>;
+  /** Replace the caller's booking policy; takes effect for future bookings only. */
+  readonly putPolicy: (
+    caller: AppointmentCaller,
+    policy: BookingPolicy,
+  ) => Effect.Effect<BookingPolicy, Forbidden | NotFound | SqlError.SqlError>;
 }
 
 export class AppointmentService extends Context.Tag("AppointmentService")<
   AppointmentService,
   AppointmentServiceService
 >() {}
+
+const isPractitionerRole = (caller: AppointmentCaller): boolean =>
+  caller.roles.includes("doctor") || caller.roles.includes("nurse");
 
 export const AppointmentServiceLive = Layer.effect(
   AppointmentService,
@@ -155,6 +164,26 @@ export const AppointmentServiceLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     const now: Effect.Effect<Date> = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms));
+
+    /**
+     * Resolve the caller's practitioner profile for practitioner-only
+     * operations: 403 without the doctor/nurse role, 404 with the role but no
+     * profile (same semantics as the availability module).
+     */
+    const requirePractitionerProfile = (
+      caller: AppointmentCaller,
+    ): Effect.Effect<string, Forbidden | NotFound | SqlError.SqlError> => {
+      if (!isPractitionerRole(caller)) {
+        return Effect.fail(
+          new Forbidden({ reason: "This action requires the doctor/nurse role." }),
+        );
+      }
+      return Effect.flatMap(practitioners.findByUserId(caller.id), (profile) =>
+        profile
+          ? Effect.succeed(profile.id)
+          : Effect.fail(new NotFound({ resource: "Practitioner profile", id: caller.id })),
+      );
+    };
 
     /**
      * The caller is a party to the appointment iff they are the booking
@@ -259,6 +288,10 @@ export const AppointmentServiceLive = Layer.effect(
               );
             }
 
+            // Stamp the practitioner's CURRENT booking policy (P3.T5) — the
+            // snapshot is what the appointment is later judged by, so policy
+            // edits never reach existing bookings.
+            const policy = yield* repo.policyForPractitioner(slot.practitionerProfileId);
             const appointment = yield* repo.insertAppointment({
               id: yield* ids.next,
               patientUserId,
@@ -270,8 +303,8 @@ export const AppointmentServiceLive = Layer.effect(
               startsAt: slot.startsAt,
               endsAt: slot.endsAt,
               priceXaf: offering.priceXaf,
-              cancellationNoticeHours: BOOKING_CANCELLATION_NOTICE_HOURS,
-              cancellationFeeXaf: BOOKING_CANCELLATION_FEE_XAF,
+              cancellationNoticeHours: policy.noticeHours,
+              cancellationFeeXaf: policy.feeXaf,
               createdAt: at,
               updatedAt: at,
             });
@@ -288,19 +321,14 @@ export const AppointmentServiceLive = Layer.effect(
 
         let owner: Effect.Effect<string, NotFound | Forbidden | SqlError.SqlError>;
         if (input.scope === "practitioner") {
-          const isPractitioner = caller.roles.includes("doctor") || caller.roles.includes("nurse");
-          if (!isPractitioner) {
+          if (!isPractitionerRole(caller)) {
             return yield* Effect.fail(
               new Forbidden({
                 reason: "The practitioner calendar requires the doctor/nurse role.",
               }),
             );
           }
-          owner = Effect.flatMap(practitioners.findByUserId(caller.id), (profile) =>
-            profile
-              ? Effect.succeed(profile.id)
-              : Effect.fail(new NotFound({ resource: "Practitioner profile", id: caller.id })),
-          );
+          owner = requirePractitionerProfile(caller);
         } else {
           owner = Effect.succeed(caller.id);
         }
@@ -346,23 +374,22 @@ export const AppointmentServiceLive = Layer.effect(
             return yield* Effect.fail(new NotFound({ resource: "Appointment", id }));
           }
           yield* resolveVisible(caller, appointment);
-          if (!isActionableStatus(appointment.status)) {
-            return yield* Effect.fail(new AppointmentStateInvalid({ current: appointment.status }));
+          // The rules engine (P3.T5) judges by the booking-time snapshot.
+          const judgement = judgeCancellation(
+            appointment,
+            at,
+            appointment.patientUserId === caller.id,
+          );
+          if (judgement.kind === "not-actionable") {
+            return yield* Effect.fail(new AppointmentStateInvalid({ current: judgement.current }));
           }
-          if (hasStarted(appointment.startsAt, at)) {
+          if (judgement.kind === "started") {
             return yield* Effect.fail(new AppointmentStarted({}));
           }
-          // The notice-window judgement is patient-side only: a cancellation
-          // by the practitioner never counts as late (the fee protects the
-          // practitioner's time, not the patient's).
-          const byPatient = appointment.patientUserId === caller.id;
-          const late =
-            byPatient &&
-            isLateCancellation(appointment.startsAt, appointment.cancellationNoticeHours, at);
 
           const cancelled = yield* repo.cancelAppointment(id, {
             byUserId: caller.id,
-            late,
+            late: judgement.kind === "late",
             now: at,
           });
           yield* repo.markSlotOpen(appointment.slotId, at);
@@ -379,10 +406,11 @@ export const AppointmentServiceLive = Layer.effect(
             return yield* Effect.fail(new NotFound({ resource: "Appointment", id }));
           }
           yield* resolveVisible(caller, appointment);
-          if (!isActionableStatus(appointment.status)) {
-            return yield* Effect.fail(new AppointmentStateInvalid({ current: appointment.status }));
+          const judgement = judgeReschedule(appointment, at);
+          if (judgement.kind === "not-actionable") {
+            return yield* Effect.fail(new AppointmentStateInvalid({ current: judgement.current }));
           }
-          if (hasStarted(appointment.startsAt, at)) {
+          if (judgement.kind === "started") {
             return yield* Effect.fail(new AppointmentStarted({}));
           }
           // Moving to the slot it already occupies is a no-op — an idempotent
@@ -447,6 +475,22 @@ export const AppointmentServiceLive = Layer.effect(
         }),
       );
 
-    return { book, list, get, cancel, reschedule };
+    const getPolicy = (caller: AppointmentCaller) =>
+      Effect.flatMap(requirePractitionerProfile(caller), repo.policyForPractitioner);
+
+    const putPolicy = (caller: AppointmentCaller, policy: BookingPolicy) =>
+      Effect.gen(function* () {
+        const profileId = yield* requirePractitionerProfile(caller);
+        const updated = yield* repo.updatePolicy(profileId, {
+          noticeHours: policy.noticeHours,
+          feeXaf: policy.feeXaf,
+          now: yield* now,
+        });
+        return updated === undefined
+          ? yield* Effect.fail(new NotFound({ resource: "Practitioner profile", id: profileId }))
+          : updated;
+      });
+
+    return { book, list, get, cancel, reschedule, getPolicy, putPolicy };
   }),
 );

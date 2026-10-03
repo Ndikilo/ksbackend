@@ -114,3 +114,24 @@ export const AppointmentIdParam = z.object({
     example: "0b9e6b1e-6f1a-4d3e-9d2a-6f1a4d3e9d2a",
   }),
 });
+
+/**
+ * The practitioner's booking policy (P3.T5). Applied to NEW bookings only —
+ * existing appointments keep the snapshot taken when they were made.
+ */
+export const BookingPolicyBody = z
+  .object({
+    noticeHours: z.number().int().min(0).max(720).openapi({
+      description:
+        "Cancellation notice window in hours (0–720): a patient cancelling with less time remaining than this is a LATE cancellation.",
+      example: 24,
+    }),
+    feeXaf: z.number().int().min(0).openapi({
+      description:
+        "Late-cancellation fee in XAF (integer, no floats), applied when the cancellation is late.",
+      example: 2500,
+    }),
+  })
+  .openapi("BookingPolicy");
+
+export const BookingPolicyResponse = BookingPolicyBody.openapi("BookingPolicyCurrent");

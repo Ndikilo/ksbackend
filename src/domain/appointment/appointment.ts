@@ -48,3 +48,13 @@ export type BookAppointmentInput = {
   /** Omit = the patient books for themself. */
   readonly dependentId?: string | undefined;
 };
+
+/**
+ * The practitioner-configurable cancellation policy (P3.T5): the notice window
+ * (hours) and late-cancellation fee (XAF) applied to NEW bookings — each
+ * appointment snapshots the values in force when it was made.
+ */
+export type BookingPolicy = {
+  readonly noticeHours: number;
+  readonly feeXaf: number;
+};
