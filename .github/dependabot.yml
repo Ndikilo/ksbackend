@@ -1,0 +1,18 @@
+# Dependabot — supply-chain scanning for both ecosystems this repo uses:
+# Bun packages (bun.lock) and the GitHub Actions in .github/workflows.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Batch dev-only bumps into one PR to keep the PR list readable.
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
