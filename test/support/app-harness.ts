@@ -60,7 +60,11 @@ const scannerFake = Layer.succeed(FileScanner, {
  */
 export const createTestHarness = async (
   config?: HarnessConfig,
-  authOpts?: { readonly rateLimit?: { readonly enabled: boolean } },
+  authOpts?: {
+    readonly rateLimit?: { readonly enabled: boolean };
+    /** Wires makeAuth's beforeDelete S3 cleanup to a real (LocalStack) bucket. */
+    readonly s3?: { readonly bucket: string; readonly region: string };
+  },
 ): Promise<TestHarness> => {
   const pg = await startTestPostgres();
   const db = drizzle(pg.url);
@@ -100,7 +104,13 @@ export const createTestHarness = async (
     emailClient,
   } satisfies Omit<AuthOptions, "rateLimit">;
   const auth = makeAuth(
-    authOpts?.rateLimit === undefined ? authBase : { ...authBase, rateLimit: authOpts.rateLimit },
+    authOpts?.rateLimit === undefined
+      ? { ...authBase, ...(authOpts?.s3 !== undefined && { s3: authOpts.s3 }) }
+      : {
+          ...authBase,
+          rateLimit: authOpts.rateLimit,
+          ...(authOpts?.s3 !== undefined && { s3: authOpts.s3 }),
+        },
   );
   const app = createApp(runtime, auth.instance);
 

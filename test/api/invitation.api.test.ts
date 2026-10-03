@@ -162,17 +162,13 @@ describe("caregiver invitations API (real DB)", () => {
   it("paginates /v1/me/invitations with an opaque cursor", async () => {
     // A dedicated caregiver so the page counts are independent of other tests.
     const pager = await harness.signUpAndVerify("pager@example.com", "password12345", "Pag Er");
-    for (const e of ["pg-a@example.com", "pg-b@example.com", "pg-c@example.com"]) {
-      expect(
-        (
-          await harness.post(
-            "/v1/dependents/invitations",
-            { inviteeEmail: e, relationship: "child" },
-            pager,
-          )
-        ).status,
-      ).toBe(201);
-    }
+    const inviteeEmails = ["pg-a@example.com", "pg-b@example.com", "pg-c@example.com"];
+    const invites = await Promise.all(
+      inviteeEmails.map((inviteeEmail) =>
+        harness.post("/v1/dependents/invitations", { inviteeEmail, relationship: "child" }, pager),
+      ),
+    );
+    expect(invites.map((invite) => invite.status)).toEqual([201, 201, 201]);
 
     const page1 = await json<{
       data: ReadonlyArray<{ id: string }>;

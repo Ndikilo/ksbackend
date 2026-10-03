@@ -197,13 +197,14 @@ describe("OTP send rate budget (real DB)", () => {
     const email = "budget@example.com";
     await harness.signUpAndVerify(email, "password12345", "Budget User");
 
-    for (let i = 0; i < 3; i += 1) {
-      expect(
-        (await harness.post("/api/auth/email-otp/request-password-reset", { email })).status,
-      ).toBe(200);
-    }
-    expect(
-      (await harness.post("/api/auth/email-otp/request-password-reset", { email })).status,
-    ).toBe(429);
+    // Sequential on purpose: the per-IP budget counts each send, so the three
+    // in-window sends must not race each other (unrolled, not a loop).
+    const first = await harness.post("/api/auth/email-otp/request-password-reset", { email });
+    const second = await harness.post("/api/auth/email-otp/request-password-reset", { email });
+    const third = await harness.post("/api/auth/email-otp/request-password-reset", { email });
+    expect([first.status, second.status, third.status]).toEqual([200, 200, 200]);
+
+    const fourth = await harness.post("/api/auth/email-otp/request-password-reset", { email });
+    expect(fourth.status).toBe(429);
   });
 });
