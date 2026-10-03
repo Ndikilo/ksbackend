@@ -20,6 +20,7 @@
   "errors.FILE_TOO_LARGE": "The file exceeds the maximum allowed size.",
   "errors.UNSUPPORTED_FILE_TYPE": "This file type is not supported.",
   "errors.FILE_INFECTED": "The uploaded file failed a security scan.",
+  "errors.FILE_SCAN_INCOMPLETE": "A document’s security scan hasn’t reported a clean result yet. Check the upload status and try again shortly.",
   "errors.VERIFICATION_STATE_INVALID": "This action isn't allowed while the profile is \"{current}\".",
   "errors.SLOT_OVERLAP": "This time slot overlaps one you've already published.",
   "emails.common.expiry": "This code expires in 5 minutes. If you didn't request it, you can safely ignore this email.",

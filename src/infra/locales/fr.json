@@ -20,6 +20,7 @@
   "errors.FILE_TOO_LARGE": "Le fichier dépasse la taille maximale autorisée.",
   "errors.UNSUPPORTED_FILE_TYPE": "Ce type de fichier n'est pas pris en charge.",
   "errors.FILE_INFECTED": "Le fichier téléversé n'a pas passé l'analyse de sécurité.",
+  "errors.FILE_SCAN_INCOMPLETE": "L’analyse de sécurité d’un document n’a pas encore donné un résultat sain. Vérifiez le statut du téléversement puis réessayez dans un instant.",
   "errors.VERIFICATION_STATE_INVALID": "Cette action n'est pas autorisée tant que le profil est « {current} ».",
   "errors.SLOT_OVERLAP": "Ce créneau chevauche un créneau que vous avez déjà publié.",
   "emails.common.expiry": "Ce code expire dans 5 minutes. Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail.",

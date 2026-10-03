@@ -6,6 +6,7 @@ import { ReviewNotEligible } from "@/domain/review/errors";
 import {
   Conflict,
   FileInfected,
+  FileScanIncomplete,
   Forbidden,
   LicenceAlreadyRegistered,
   NotFound,
@@ -69,6 +70,11 @@ export const causeToError = (cause: Cause.Cause<unknown>): MappedError => {
     }
     if (error instanceof FileInfected) {
       return { status: 422, code: "FILE_INFECTED", params: {}, details: [] };
+    }
+    if (error instanceof FileScanIncomplete) {
+      // Retryable: the scan hasn't reported clean yet (pending/unscanned/lookup
+      // error). 409 + Retry-After tells the client to poll and re-submit later.
+      return { status: 409, code: "FILE_SCAN_INCOMPLETE", params: {}, details: [] };
     }
     if (error instanceof SlotOverlap) {
       return { status: 409, code: "SLOT_OVERLAP", params: {}, details: [] };

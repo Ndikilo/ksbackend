@@ -54,3 +54,14 @@ export class VerificationStateInvalid extends Data.TaggedError("VerificationStat
 export class FileInfected extends Data.TaggedError("FileInfected")<{
   readonly key: string;
 }> {}
+
+/**
+ * A document's malware scan has NOT reported `clean` (pending, unscanned, or
+ * the scan-status lookup failed). Not provably safe, so the submission is
+ * rejected — but retryable: the client can poll/resubmit once the scan or the
+ * lookup recovers. Unlike FileInfected this is not a verdict on the file.
+ */
+export class FileScanIncomplete extends Data.TaggedError("FileScanIncomplete")<{
+  readonly key: string;
+  readonly status: string;
+}> {}

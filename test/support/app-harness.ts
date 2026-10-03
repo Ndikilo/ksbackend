@@ -35,11 +35,22 @@ type HarnessConfig = {
   readonly PLATFORM_COMMISSION_BPS?: string;
 };
 
-// A scan-aware fake: any file key containing "infected" reports infected, so the
-// FileInfected rejection branch is drivable from tests; everything else is clean.
+// A scan-aware fake: file keys containing a status marker report that status
+// ("infected", "pending", "unscanned", "scan-error" → error), so every branch
+// of the fail-closed malware gate is drivable from tests; the rest are clean.
 const scannerFake = Layer.succeed(FileScanner, {
   status: (key: string) =>
-    Effect.succeed<ScanStatus>(key.includes("infected") ? "infected" : "clean"),
+    Effect.succeed<ScanStatus>(
+      key.includes("infected")
+        ? "infected"
+        : key.includes("pending")
+          ? "pending"
+          : key.includes("unscanned")
+            ? "unscanned"
+            : key.includes("scan-error")
+              ? "error"
+              : "clean",
+    ),
 });
 
 /**

@@ -94,6 +94,29 @@ describe("practitioner API (real DB)", () => {
     expect((await json<{ error: { code: string } }>(res)).error.code).toBe("FILE_INFECTED");
   });
 
+  // Fail-closed gate: anything not `clean` is refused. pending/unscanned/scan-
+  // error are not verdicts on the file — retryable 409 FILE_SCAN_INCOMPLETE.
+  it.each([
+    ["pending", "pending-nic"],
+    ["unscanned", "unscanned-nic"],
+    ["scan-error (lookup failed)", "scan-error-nic"],
+  ])(
+    "rejects credentials whose scan is %s with 409 FILE_SCAN_INCOMPLETE",
+    async (_scenario, marker) => {
+      const res = await harness.post(
+        "/v1/practitioners/me/credentials",
+        credentials(doctorUserId, {
+          nicFileKey: `practitioner-documents/${doctorUserId}/${marker}`,
+        }),
+        docCookie,
+      );
+      expect(res.status).toBe(409);
+      expect((await json<{ error: { code: string } }>(res)).error.code).toBe(
+        "FILE_SCAN_INCOMPLETE",
+      );
+    },
+  );
+
   it("accepts clean credentials and moves to pending_verification", async () => {
     const res = await harness.post(
       "/v1/practitioners/me/credentials",

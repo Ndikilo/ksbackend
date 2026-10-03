@@ -169,7 +169,8 @@ const submit = createRoute({
     "`nicNumber` (national ID card) together with the three file `key`s returned by the presign",
     "calls. On success the profile moves to `pending_verification`, and an admin then approves or",
     "rejects it. Returns `409` if the licence number is already registered to another",
-    "practitioner or the profile isn't ready to submit.",
+    "practitioner, the profile isn't ready to submit, or a document's malware scan hasn't",
+    "reported a clean verdict yet (fail-closed — poll and re-submit once the scan completes).",
   ].join(" "),
   request: { body: jsonBody(SubmitCredentialsBody) },
   responses: {
@@ -181,7 +182,7 @@ const submit = createRoute({
     409: {
       ...jsonBody(ErrorResponse),
       description:
-        "Licence already registered, or the profile isn't in a state that can be submitted.",
+        "Licence already registered, the profile isn't in a state that can be submitted, or a document's malware scan hasn't reported clean yet (`FILE_SCAN_INCOMPLETE` — retryable).",
     },
     422: {
       ...jsonBody(ErrorResponse),

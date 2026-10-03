@@ -8,6 +8,7 @@ import type {
 } from "@/domain/practitioner/practitioner";
 import {
   FileInfected,
+  FileScanIncomplete,
   LicenceAlreadyRegistered,
   NotFound,
   ProfileIncomplete,
@@ -111,6 +112,7 @@ export interface PractitionerServiceService {
     | VerificationStateInvalid
     | ValidationFailed
     | FileInfected
+    | FileScanIncomplete
     | LicenceAlreadyRegistered
     | SqlError.SqlError
   >;
@@ -273,13 +275,18 @@ export const PractitionerServiceLive = Layer.effect(
           yield* Effect.forEach(
             keys,
             (key) =>
-              scanner
-                .status(key)
-                .pipe(
-                  Effect.flatMap((status) =>
-                    status === "infected" ? Effect.fail(new FileInfected({ key })) : Effect.void,
-                  ),
+              scanner.status(key).pipe(
+                // Fail-closed: ONLY a `clean` verdict passes. Infected is a
+                // permanent 422; pending/unscanned/lookup-error are retryable —
+                // the client polls status and re-submits once scans complete.
+                Effect.flatMap((status): Effect.Effect<void, FileInfected | FileScanIncomplete> =>
+                  status === "clean"
+                    ? Effect.void
+                    : status === "infected"
+                      ? Effect.fail(new FileInfected({ key }))
+                      : Effect.fail(new FileScanIncomplete({ key, status })),
                 ),
+              ),
             { concurrency: "unbounded", discard: true },
           );
           const cmcHmac = crypto.hmac(input.cmcRegistrationNumber);
