@@ -79,6 +79,9 @@ is used as-is.
 - `SENTRY_DSN` — the api project's DSN from Sentry (error reporting is fully
   disabled while it's unset). Events carry `request_id` + `user_roles` tags so
   they correlate with the request logs.
+- `LOG_DRAIN_OTLP_ENDPOINT` (+ `LOG_DRAIN_OTLP_HEADERS`) — optional OTLP sink
+  for the wide-event log drain (alert rules in docs/runbook.md); console-only
+  while unset.
 - `BETTER_AUTH_URL` and `CORS_ORIGINS` are set by the blueprint to the deployed
   https origin (`https://ksbackend-api.onrender.com` + Expo web dev); point them
   at the final production origin (e.g. a custom domain) when you have one —
