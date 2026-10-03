@@ -92,6 +92,13 @@
       "when": 1791009989005,
       "tag": "0012_cultured_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791058780938,
+      "tag": "0013_faithful_karnak",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ export * from "./consent-audit";
 export * from "./dependent";
 export * from "./enums";
 export * from "./notification-preference";
+export * from "./payment";
 export * from "./consultation-offering";
 export * from "./language";
 export * from "./payout-method";

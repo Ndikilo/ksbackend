@@ -84,3 +84,17 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
   "completed",
   "no_show",
 ]);
+
+/** Payment lifecycle (P5.T2): initiated → pending → succeeded/failed; a
+ *  succeeded charge can be refunded. `pending` = the provider acknowledged the
+ *  charge and we await the wallet confirmation. */
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "initiated",
+  "pending",
+  "succeeded",
+  "failed",
+  "refunded",
+]);
+
+/** Mobile-money rails (P5.T1 adapters). */
+export const paymentProviderEnum = pgEnum("payment_provider", ["momo", "orange_money"]);
