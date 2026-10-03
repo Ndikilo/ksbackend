@@ -64,6 +64,13 @@
       "when": 1787753078059,
       "tag": "0008_skinny_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790986120890,
+      "tag": "0009_steady_daredevil",
+      "breakpoints": true
     }
   ]
 }

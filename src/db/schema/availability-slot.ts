@@ -25,6 +25,10 @@ export const availabilitySlot = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // General FK index — joins, per-practitioner calendar reads in ANY status,
+    // and the ON DELETE CASCADE scan. (The partial index below only covers the
+    // open+future+not-deleted slice.)
+    index("availability_slot_practitioner_profile_id_idx").on(t.practitionerProfileId),
     // Makes MIN(starts_at) for next-available an index scan.
     index("availability_open_future_idx")
       .on(t.practitionerProfileId, t.startsAt)
