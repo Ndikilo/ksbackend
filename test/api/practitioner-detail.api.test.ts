@@ -269,6 +269,13 @@ describe("practitioner detail modules (real DB)", () => {
       profilePhotoFileKey: photoKey,
     });
     expect(profileUpdate.status).toBe(200);
+    // A practitioner-configured cancellation policy must be visible to patients
+    // BEFORE they commit (the confirm screen quotes the real notice window + fee).
+    const policy = await request("PUT", "/v1/practitioners/me/booking-policy", doctorCookie, {
+      noticeHours: 48,
+      feeXaf: 2500,
+    });
+    expect(policy.status).toBe(200);
     const verification = await request("GET", "/v1/practitioners/me/verification", doctorCookie);
     const verificationBody = await json<{
       status: string;
@@ -299,8 +306,12 @@ describe("practitioner detail modules (real DB)", () => {
       offerings: ReadonlyArray<{ id: string }>;
       verification: { registrationNumber: string };
       booking: { bookable: boolean };
+      cancellationNoticeHours: number;
+      cancellationFeeXaf: number;
     }>(detail);
     expect(detailBody.profession.nameEn).toBe("Dentist");
+    expect(detailBody.cancellationNoticeHours).toBe(48);
+    expect(detailBody.cancellationFeeXaf).toBe(2500);
     expect(detailBody.languages.map((item) => item.code).toSorted()).toEqual(["en", "fr"]);
     expect(detailBody.qualifications).toContainEqual(
       expect.objectContaining({ id: qualificationId }),

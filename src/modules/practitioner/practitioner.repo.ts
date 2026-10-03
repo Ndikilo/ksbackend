@@ -37,6 +37,8 @@ const toDomain = (p: Row, base: ProfileRow): Practitioner => ({
   yearsExperience: p.yearsExperience,
   consultationFeeXaf: p.consultationFeeXaf,
   consultationTypes: p.consultationTypes,
+  cancellationNoticeHours: p.cancellationNoticeHours,
+  cancellationFeeXaf: p.cancellationFeeXaf,
   ratingAverage: p.ratingAverage,
   ratingCount: p.ratingCount,
   latitude: p.latitude,

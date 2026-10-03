@@ -24,6 +24,9 @@ export type Practitioner = {
   readonly yearsExperience: number | null;
   readonly consultationFeeXaf: number | null;
   readonly consultationTypes: ReadonlyArray<ConsultationType> | null;
+  /** Cancellation policy in force (public — patients see it before booking). */
+  readonly cancellationNoticeHours: number;
+  readonly cancellationFeeXaf: number;
   readonly ratingAverage: number;
   readonly ratingCount: number;
   readonly latitude: number | null;

@@ -44,6 +44,8 @@ const publicFields = (p: Practitioner) => ({
   yearsExperience: p.yearsExperience,
   consultationFeeXaf: p.consultationFeeXaf,
   consultationTypes: p.consultationTypes === null ? null : [...p.consultationTypes],
+  cancellationNoticeHours: p.cancellationNoticeHours,
+  cancellationFeeXaf: p.cancellationFeeXaf,
   ratingAverage: p.ratingAverage,
   ratingCount: p.ratingCount,
 });

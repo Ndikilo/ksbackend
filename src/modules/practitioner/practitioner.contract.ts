@@ -141,6 +141,16 @@ const publicFields = {
       description: "How the practitioner consults. Null until set.",
       example: ["in_person", "video"],
     }),
+  cancellationNoticeHours: z.number().int().openapi({
+    description:
+      "Cancellation policy: appointments cancelled with less than this many hours remaining are late. Public — shown before booking.",
+    example: 24,
+  }),
+  cancellationFeeXaf: z.number().int().openapi({
+    description:
+      "Cancellation policy: XAF fee (integer) charged for late cancellations. 0 = free cancellation inside the window. Public — shown before booking.",
+    example: 0,
+  }),
   ratingAverage: z.number().openapi({
     description: "Average patient rating (0–5, one decimal). 0 when there are no reviews yet.",
     example: 4.6,
