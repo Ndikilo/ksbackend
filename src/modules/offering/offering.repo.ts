@@ -27,6 +27,10 @@ export interface OfferingRepoService {
     practitionerProfileId: string,
     id: string,
   ) => Effect.Effect<ConsultationOffering | undefined, SqlError.SqlError>;
+  /** Live + active offering by id, regardless of owner (booking flow — P3.T2). */
+  readonly findActiveById: (
+    id: string,
+  ) => Effect.Effect<ConsultationOffering | undefined, SqlError.SqlError>;
   readonly idExists: (id: string) => Effect.Effect<boolean, SqlError.SqlError>;
   readonly hasDuplicate: (
     practitionerProfileId: string,
@@ -92,6 +96,19 @@ export const OfferingRepoLive = Layer.effect(
             and(
               eq(consultationOffering.practitionerProfileId, practitionerProfileId),
               eq(consultationOffering.id, id),
+              isNull(consultationOffering.deletedAt),
+            ),
+          )
+          .limit(1)
+          .pipe(Effect.map((rows) => (rows[0] ? toDomain(rows[0]) : undefined))),
+      findActiveById: (id) =>
+        db
+          .select()
+          .from(consultationOffering)
+          .where(
+            and(
+              eq(consultationOffering.id, id),
+              eq(consultationOffering.active, true),
               isNull(consultationOffering.deletedAt),
             ),
           )

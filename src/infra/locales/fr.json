@@ -23,6 +23,7 @@
   "errors.FILE_SCAN_INCOMPLETE": "L’analyse de sécurité d’un document n’a pas encore donné un résultat sain. Vérifiez le statut du téléversement puis réessayez dans un instant.",
   "errors.VERIFICATION_STATE_INVALID": "Cette action n'est pas autorisée tant que le profil est « {current} ».",
   "errors.SLOT_OVERLAP": "Ce créneau chevauche un créneau que vous avez déjà publié.",
+  "errors.SLOT_TAKEN": "Ce créneau vient d’être réservé. Veuillez en choisir un autre.",
   "emails.common.expiry": "Ce code expire dans 5 minutes. Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail.",
   "emails.common.footer": "KanaSanté — des soins de confiance à portée de main.",
   "emails.otp.subject": "Votre code de vérification KanaSanté",

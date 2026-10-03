@@ -1,5 +1,6 @@
 import { Cause } from "effect";
 import { describe, expect, it } from "vitest";
+import { SlotTaken } from "@/domain/appointment/errors";
 import {
   Conflict,
   LicenceAlreadyRegistered,
@@ -32,6 +33,13 @@ describe("causeToError", () => {
     );
     expect(mapped.status).toBe(422);
     expect(mapped.details).toEqual([{ path: "email", message: "invalid" }]);
+  });
+
+  it("maps SlotTaken -> 409 SLOT_TAKEN (the booking concurrency loser, P3.T2)", () => {
+    const mapped = causeToError(Cause.fail(new SlotTaken({})));
+    expect(mapped.status).toBe(409);
+    expect(mapped.code).toBe("SLOT_TAKEN");
+    expect(mapped.params).toEqual({});
   });
 
   it("maps unknown failures and defects to 500 INTERNAL", () => {

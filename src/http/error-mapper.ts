@@ -2,6 +2,7 @@ import { Cause, Option } from "effect";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { SlotOverlap } from "@/domain/availability/errors";
+import { SlotTaken } from "@/domain/appointment/errors";
 import { ReviewNotEligible } from "@/domain/review/errors";
 import {
   Conflict,
@@ -78,6 +79,11 @@ export const causeToError = (cause: Cause.Cause<unknown>): MappedError => {
     }
     if (error instanceof SlotOverlap) {
       return { status: 409, code: "SLOT_OVERLAP", params: {}, details: [] };
+    }
+    if (error instanceof SlotTaken) {
+      // The concurrency loser of two bookings on one slot (P3.T2). Retryable:
+      // pick another slot.
+      return { status: 409, code: "SLOT_TAKEN", params: {}, details: [] };
     }
     if (error instanceof ValidationFailed) {
       return { status: 422, code: "VALIDATION_FAILED", params: {}, details: error.issues };
