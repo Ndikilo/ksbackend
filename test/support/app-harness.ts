@@ -9,6 +9,8 @@ import { createApp } from "@/http/app";
 import { makeAuth, type AuthOptions } from "@/infra/auth";
 import { type EmailClient, EmailSender, type EmailMessage } from "@/infra/email";
 import { GeocoderFakeLive } from "@/infra/geocoding";
+import { type PaymentProviders } from "@/infra/payments/provider";
+import { PaymentProvidersLive } from "@/infra/payments/registry";
 import { FileScanner, type ScanStatus } from "@/infra/scanner";
 import { FileStorageFakeLive } from "@/infra/storage";
 import { makeAppLayer } from "@/runtime";
@@ -33,6 +35,7 @@ type HarnessConfig = {
   readonly RATE_LIMIT_MAX?: string;
   readonly RATE_LIMIT_WINDOW_SECONDS?: string;
   readonly PLATFORM_COMMISSION_BPS?: string;
+  readonly PAYMENT_WEBHOOK_SECRET?: string;
 };
 
 // A scan-aware fake: file keys containing a status marker report that status
@@ -68,6 +71,12 @@ export const createTestHarness = async (
   appOpts?: {
     /** Registers a test-only route that throws, to drive the 500 path. */
     readonly throwingRoute?: boolean;
+    /**
+     * Overrides the mobile-money rails (P5.T3 tests script charge outcomes).
+     * Default: the REAL env-configured adapters — with no credentials set they
+     * fail per call, which is exactly the not-configured path under test.
+     */
+    readonly payments?: Layer.Layer<PaymentProviders>;
   },
 ): Promise<TestHarness> => {
   const pg = await startTestPostgres();
@@ -86,6 +95,7 @@ export const createTestHarness = async (
     storage: FileStorageFakeLive,
     scanner: scannerFake,
     geocoder: GeocoderFakeLive,
+    payments: appOpts?.payments ?? PaymentProvidersLive,
   });
   const appLayer =
     config === undefined

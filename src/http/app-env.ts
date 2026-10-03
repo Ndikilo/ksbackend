@@ -13,6 +13,7 @@ import type { InvitationService } from "@/modules/invitation/invitation.service"
 import type { LocationService } from "@/modules/location/location.service";
 import type { NotificationService } from "@/modules/notification/notification.service";
 import type { OfferingService } from "@/modules/offering/offering.service";
+import type { PaymentService } from "@/modules/payment/payment.service";
 import type { PatientService } from "@/modules/patient/patient.service";
 import type { PatientSearchService } from "@/modules/patient/search/search.service";
 import type { PractitionerService } from "@/modules/practitioner/practitioner.service";
@@ -54,7 +55,8 @@ export type AppServices =
   | QualificationService
   | LocationService
   | OfferingService
-  | PayoutService;
+  | PayoutService
+  | PaymentService;
 
 /**
  * The application runtime as seen by the HTTP layer. Any runtime that provides

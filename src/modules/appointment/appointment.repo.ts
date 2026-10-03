@@ -108,6 +108,18 @@ export interface AppointmentRepoService {
     },
   ) => Effect.Effect<Appointment, SqlError.SqlError>;
   /**
+   * Confirm a PENDING appointment (P5.T3) — the ONLY write that produces
+   * `confirmed`, and the checkout service calls it exclusively inside the same
+   * transaction that flips the charge to `succeeded`: the booking cannot
+   * confirm without a succeeded payment. Guarded on `status = 'pending'` (a
+   * meanwhile-cancelled booking is never resurrected; the money is then held
+   * for the refund flow). Returns undefined when the guard excluded the row.
+   */
+  readonly confirmAppointment: (
+    id: string,
+    now: Date,
+  ) => Effect.Effect<Appointment | undefined, SqlError.SqlError>;
+  /**
    * The practitioner's booking policy (P3.T5) — the values stamped onto NEW
    * bookings. FK-guaranteed to exist for any real slot/practitioner; a missing
    * row is a broken invariant → defect.
@@ -284,6 +296,14 @@ export const AppointmentRepoLive = Layer.effect(
                   ),
             ),
           ),
+
+      confirmAppointment: (id, now) =>
+        db
+          .update(appointment)
+          .set({ status: "confirmed", updatedAt: now })
+          .where(and(eq(appointment.id, id), eq(appointment.status, "pending")))
+          .returning()
+          .pipe(Effect.map((rows) => (rows[0] ? toDomain(rows[0]) : undefined))),
 
       policyForPractitioner: (practitionerProfileId) =>
         db

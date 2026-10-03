@@ -20,6 +20,7 @@ import { registerLocationRoutes } from "@/modules/location/location.routes";
 import { registerPatientRoutes } from "@/modules/patient/patient.routes";
 import { registerPatientSearchRoutes } from "@/modules/patient/search/search.routes";
 import { registerOfferingRoutes } from "@/modules/offering/offering.routes";
+import { registerPaymentRoutes } from "@/modules/payment/payment.routes";
 import { registerPayoutRoutes } from "@/modules/payout/payout.routes";
 import { registerPractitionerRoutes } from "@/modules/practitioner/practitioner.routes";
 import { registerPractitionerSearchRoutes } from "@/modules/practitioner/search/search.routes";
@@ -169,6 +170,7 @@ export const createApp = (
   registerProfileRoutes(app, runtime);
   registerNotificationRoutes(app, runtime);
   registerAppointmentRoutes(app, runtime);
+  registerPaymentRoutes(app, runtime);
   registerPatientRoutes(app, runtime);
   registerPatientSearchRoutes(app, runtime);
   registerPractitionerRoutes(app, runtime);
@@ -227,6 +229,13 @@ export const createApp = (
         "was snapshotted at booking). Practitioners read their agenda with",
         "`GET /v1/appointments?scope=practitioner`.",
         "",
+        "**Paying** (MoMo / Orange Money) — `POST /v1/payments` with",
+        "`{ appointmentId, provider, payerPhone }` starts the charge (idempotent on the payment",
+        "id). Poll `GET /v1/payments/{id}` — a decided provider outcome is applied on read — or",
+        "let the provider call the signature-verified `POST /v1/payments/webhook`. The appointment",
+        "CONFIRMS only when its charge succeeds. Admins refund with",
+        "`POST /v1/payments/{id}/refund` (charge → refunded, booking → cancelled, atomically).",
+        "",
         "**Practitioner (doctor/nurse)** — `POST /v1/practitioners/register` → upload each document",
         "with `POST /v1/practitioners/me/documents/presign` (×3: CMC certificate, NIC, photo) →",
         "`POST /v1/practitioners/me/credentials` with the returned keys (moves to",
@@ -279,6 +288,11 @@ export const createApp = (
         name: "Appointments",
         description:
           "The booking engine: patients (caregivers) reserve a practitioner's slot for themselves or a managed dependent, then reschedule or cancel under the practitioner's policy. Practitioners read their agenda with `?scope=practitioner`.",
+      },
+      {
+        name: "Payments",
+        description:
+          "Mobile-money checkout (MoMo / Orange Money, integer XAF): start a charge for a pending appointment, poll its status, refund (admin). A booking CONFIRMS only when its charge succeeds — webhook- or poll-applied, atomically. Provider callbacks hit the signature-verified webhook.",
       },
       { name: "Reference", description: "Active profession and ISO language catalogs." },
       { name: "Qualifications", description: "Practitioner qualifications and certifications." },

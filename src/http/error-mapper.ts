@@ -7,6 +7,12 @@ import {
   AppointmentStateInvalid,
   SlotTaken,
 } from "@/domain/appointment/errors";
+import {
+  PaymentDeclined,
+  PaymentProviderUnavailable,
+  PaymentStateInvalid,
+  WebhookSignatureInvalid,
+} from "@/domain/payment/errors";
 import { ReviewNotEligible } from "@/domain/review/errors";
 import {
   Conflict,
@@ -101,6 +107,31 @@ export const causeToError = (cause: Cause.Cause<unknown>): MappedError => {
     if (error instanceof AppointmentStarted) {
       // The appointment's time has started — self-service changes are over.
       return { status: 409, code: "APPOINTMENT_STARTED", params: {}, details: [] };
+    }
+    if (error instanceof PaymentStateInvalid) {
+      // A payment action attempted from a status that forbids it — re-paying a
+      // succeeded charge, refunding a failed one (P5.T3).
+      return {
+        status: 409,
+        code: "PAYMENT_STATE_INVALID",
+        params: { current: error.current },
+        details: [],
+      };
+    }
+    if (error instanceof PaymentDeclined) {
+      // The wallet/provider refused the charge — the patient can retry with
+      // the same or another rail (P5.T3).
+      return { status: 402, code: "PAYMENT_DECLINED", params: {}, details: [] };
+    }
+    if (error instanceof PaymentProviderUnavailable) {
+      // Provider unreachable/misconfigured/uncontractual — nothing was decided
+      // about the money; the charge stays initiated and the call is retryable.
+      return { status: 503, code: "PAYMENT_PROVIDER_UNAVAILABLE", params: {}, details: [] };
+    }
+    if (error instanceof WebhookSignatureInvalid) {
+      // Fail-closed webhook auth: missing/malformed/mismatching HMAC — the
+      // payload was never processed (P5.T3).
+      return { status: 401, code: "WEBHOOK_SIGNATURE_INVALID", params: {}, details: [] };
     }
     if (error instanceof ValidationFailed) {
       return { status: 422, code: "VALIDATION_FAILED", params: {}, details: error.issues };

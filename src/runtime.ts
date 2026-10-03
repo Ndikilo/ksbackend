@@ -6,6 +6,8 @@ import { Geocoder, GeocoderFakeLive, GeocoderNominatimLive } from "./infra/geoco
 import { HealthLive } from "./infra/health";
 import { IdGeneratorLive } from "./infra/ids";
 import { LoggerLive } from "./infra/logger";
+import { PaymentProviders } from "./infra/payments/provider";
+import { PaymentProvidersLive } from "./infra/payments/registry";
 import { RateLimiterInMemoryLive } from "./infra/rate-limiter";
 import { FileScanner, FileScannerCleanLive, FileScannerS3Live } from "./infra/scanner";
 import { FileStorage, FileStorageFakeLive, FileStorageS3Live } from "./infra/storage";
@@ -29,6 +31,8 @@ import { PatientRepoLive } from "./modules/patient/patient.repo";
 import { PatientServiceLive } from "./modules/patient/patient.service";
 import { PatientSearchRepoLive } from "./modules/patient/search/search.repo";
 import { PatientSearchServiceLive } from "./modules/patient/search/search.service";
+import { PaymentRepoLive } from "./modules/payment/payment.repo";
+import { PaymentServiceLive } from "./modules/payment/payment.service";
 import { ProfileRepoLive } from "./modules/profile/profile.repo";
 import { ProfileServiceLive } from "./modules/profile/profile.service";
 import { PayoutRepoLive } from "./modules/payout/payout.repo";
@@ -50,6 +54,9 @@ export type InfraLayers = {
   readonly storage: Layer.Layer<FileStorage, unknown, never>;
   readonly scanner: Layer.Layer<FileScanner, unknown, never>;
   readonly geocoder: Layer.Layer<Geocoder, unknown, never>;
+  /** Mobile-money rails (P5.T3): the real env-configured adapters, or a
+   *  scripted fake under test. Unset credentials fail per call, never at boot. */
+  readonly payments: Layer.Layer<PaymentProviders, unknown, never>;
 };
 
 /**
@@ -62,6 +69,7 @@ export const fakeInfra: InfraLayers = {
   storage: FileStorageFakeLive,
   scanner: FileScannerCleanLive,
   geocoder: GeocoderFakeLive,
+  payments: PaymentProvidersLive,
 };
 
 /**
@@ -87,6 +95,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
   const payoutRepo = PayoutRepoLive.pipe(Layer.provide(database));
   const reviewRepo = ReviewRepoLive.pipe(Layer.provide(database));
   const appointmentRepo = AppointmentRepoLive.pipe(Layer.provide(database));
+  const paymentRepo = PaymentRepoLive.pipe(Layer.provide(database));
 
   const reference = ReferenceServiceLive.pipe(Layer.provide(referenceRepo));
   const qualification = QualificationServiceLive.pipe(
@@ -186,6 +195,12 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
       ),
     ),
   );
+  // Checkout (P5.T3) runs multi-write transactions (charge flip + appointment
+  // confirm / refund + cancel + slot free) — `database` provides the shared
+  // SqlClient; the appointment repo is the atomic tie to the booking state.
+  const payment = PaymentServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(paymentRepo, appointmentRepo, idGen, infra.payments, database)),
+  );
 
   return Layer.mergeAll(
     profile,
@@ -206,6 +221,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     invitation,
     health,
     appointment,
+    payment,
     RateLimiterInMemoryLive,
     LoggerLive,
   );
@@ -223,6 +239,7 @@ export const infraFor = (appEnv: string): InfraLayers => ({
   storage: FileStorageS3Live,
   scanner: appEnv === "prod" || appEnv === "staging" ? FileScannerS3Live : FileScannerCleanLive,
   geocoder: appEnv === "prod" || appEnv === "staging" ? GeocoderNominatimLive : GeocoderFakeLive,
+  payments: PaymentProvidersLive,
 });
 
 /** Build the one application runtime (production entry). */

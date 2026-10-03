@@ -12,6 +12,12 @@ import {
   Unauthorized,
   ValidationFailed,
 } from "@/domain/shared/errors";
+import {
+  PaymentDeclined,
+  PaymentProviderUnavailable,
+  PaymentStateInvalid,
+  WebhookSignatureInvalid,
+} from "@/domain/payment/errors";
 import { causeToError } from "./error-mapper";
 
 // Behavior test: given a domain failure, we get the right (status, code, params).
@@ -56,6 +62,25 @@ describe("causeToError", () => {
     expect(started.status).toBe(409);
     expect(started.code).toBe("APPOINTMENT_STARTED");
     expect(started.params).toEqual({});
+  });
+
+  it("maps payment failures to their stable codes (P5.T3)", () => {
+    const state = causeToError(Cause.fail(new PaymentStateInvalid({ current: "succeeded" })));
+    expect(state.status).toBe(409);
+    expect(state.code).toBe("PAYMENT_STATE_INVALID");
+    expect(state.params).toEqual({ current: "succeeded" });
+
+    expect(causeToError(Cause.fail(new PaymentDeclined({ reason: "no funds" })))).toMatchObject({
+      status: 402,
+      code: "PAYMENT_DECLINED",
+    });
+    expect(
+      causeToError(Cause.fail(new PaymentProviderUnavailable({ reason: "not configured" }))),
+    ).toMatchObject({ status: 503, code: "PAYMENT_PROVIDER_UNAVAILABLE" });
+    expect(causeToError(Cause.fail(new WebhookSignatureInvalid({})))).toMatchObject({
+      status: 401,
+      code: "WEBHOOK_SIGNATURE_INVALID",
+    });
   });
 
   it("maps unknown failures and defects to 500 INTERNAL", () => {
