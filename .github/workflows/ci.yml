@@ -62,3 +62,20 @@ jobs:
       # (Docker is available on ubuntu-latest by default).
       - name: Integration tests (Testcontainers)
         run: bun run test:integration
+
+  # The deploy artifact is always build-tested; never pushed (P0.T8).
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build production image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ksbackend-ci:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
