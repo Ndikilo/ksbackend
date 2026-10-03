@@ -55,8 +55,16 @@ jobs:
             exit 1
           fi
 
-      - name: Test (vitest — unit + api)
-        run: bun run test
+      - name: Test (vitest — unit + api, with coverage)
+        run: bun run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
 
       # Integration tests provision their own Postgres via Testcontainers
       # (Docker is available on ubuntu-latest by default).

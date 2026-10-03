@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+// Coverage types live on the root "vitest" export, not "vitest/config".
+import type { CoverageOptions } from "vitest";
 
 // Non-secret defaults so Config-driven layers (Crypto, locale) build under tests
 // (tests don't go through varlock). A .config.ts is exempt from `no-process-env`.
@@ -24,8 +26,26 @@ process.env.DEFAULT_LOCALE ??= "fr";
 // inherited, so each project sets it explicitly.
 const resolve = { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } };
 
+// Coverage (P1.T5): v8 provider over `src/**`, aggregated across the unit +
+// api projects. Report-ONLY phase — thresholds are DEFINED below but enforced
+// only when COVERAGE_ENFORCE=1, so `bun run test:coverage` always produces a
+// report while baselines settle. Flip the flag on in CI to make them blocking
+// once the numbers are meaningful.
+const coverage: CoverageOptions<"v8"> = {
+  provider: "v8",
+  reporter: ["text", "html", "lcov"],
+  include: ["src/**/*.ts"],
+  // Tests cover code, they are not covered by it; generated drizzle tables and
+  // the better-auth CLI boundary carry no meaningful coverage.
+  exclude: ["src/**/*.test.ts", "src/db/schema/**", "src/auth.ts"],
+};
+if (process.env.COVERAGE_ENFORCE === "1") {
+  coverage.thresholds = { lines: 60, branches: 45, functions: 55, statements: 60 };
+}
+
 export default defineConfig({
   test: {
+    coverage,
     projects: [
       {
         resolve,
