@@ -24,6 +24,8 @@
   "errors.VERIFICATION_STATE_INVALID": "This action isn't allowed while the profile is \"{current}\".",
   "errors.SLOT_OVERLAP": "This time slot overlaps one you've already published.",
   "errors.SLOT_TAKEN": "This time was just booked. Please pick another slot.",
+  "errors.APPOINTMENT_STATE_INVALID": "This action isn't possible while the appointment is \"{current}\".",
+  "errors.APPOINTMENT_STARTED": "The appointment has already started and can no longer be changed.",
   "emails.common.expiry": "This code expires in 5 minutes. If you didn't request it, you can safely ignore this email.",
   "emails.common.footer": "KanaSanté — connecting you to trusted care.",
   "emails.otp.subject": "Your KanaSanté verification code",

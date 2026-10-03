@@ -2,7 +2,11 @@ import { Cause, Option } from "effect";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { SlotOverlap } from "@/domain/availability/errors";
-import { SlotTaken } from "@/domain/appointment/errors";
+import {
+  AppointmentStarted,
+  AppointmentStateInvalid,
+  SlotTaken,
+} from "@/domain/appointment/errors";
 import { ReviewNotEligible } from "@/domain/review/errors";
 import {
   Conflict,
@@ -84,6 +88,19 @@ export const causeToError = (cause: Cause.Cause<unknown>): MappedError => {
       // The concurrency loser of two bookings on one slot (P3.T2). Retryable:
       // pick another slot.
       return { status: 409, code: "SLOT_TAKEN", params: {}, details: [] };
+    }
+    if (error instanceof AppointmentStateInvalid) {
+      // A cancel/reschedule attempted from a status that forbids it (P3.T3).
+      return {
+        status: 409,
+        code: "APPOINTMENT_STATE_INVALID",
+        params: { current: error.current },
+        details: [],
+      };
+    }
+    if (error instanceof AppointmentStarted) {
+      // The appointment's time has started — self-service changes are over.
+      return { status: 409, code: "APPOINTMENT_STARTED", params: {}, details: [] };
     }
     if (error instanceof ValidationFailed) {
       return { status: 422, code: "VALIDATION_FAILED", params: {}, details: error.issues };

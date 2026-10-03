@@ -12,6 +12,7 @@ import { Health } from "@/infra/health";
 import { type Locale, negotiateLocale, translate } from "@/infra/i18n";
 import { RateLimiter } from "@/infra/rate-limiter";
 import { captureApiError } from "@/infra/sentry";
+import { registerAppointmentRoutes } from "@/modules/appointment/appointment.routes";
 import { registerAdminRoutes } from "@/modules/admin/admin.routes";
 import { registerDependentRoutes } from "@/modules/dependent/dependent.routes";
 import { registerInvitationRoutes } from "@/modules/invitation/invitation.routes";
@@ -167,6 +168,7 @@ export const createApp = (
   registerMeRoute(app, runtime);
   registerProfileRoutes(app, runtime);
   registerNotificationRoutes(app, runtime);
+  registerAppointmentRoutes(app, runtime);
   registerPatientRoutes(app, runtime);
   registerPatientSearchRoutes(app, runtime);
   registerPractitionerRoutes(app, runtime);
@@ -216,6 +218,15 @@ export const createApp = (
         "grants the `patient` role and stores the emergency contact). Manage care recipients under",
         "**Dependents** below. Any user can also self-serve the role with `POST /v1/me/roles/patient`.",
         "",
+        "**Booking** — search practitioners (`GET /v1/practitioners/search`), read a practitioner's",
+        "open slots (`GET /v1/practitioners/{id}/availability`), pick an offering, then",
+        "`POST /v1/appointments` with `{ slotId, offeringId, dependentId? }`. Read your bookings",
+        "with `GET /v1/appointments`, one with `GET /v1/appointments/{id}`; move it with",
+        "`POST /v1/appointments/{id}/reschedule` and cancel with",
+        "`POST /v1/appointments/{id}/cancel` (the response carries the cancellation policy that",
+        "was snapshotted at booking). Practitioners read their agenda with",
+        "`GET /v1/appointments?scope=practitioner`.",
+        "",
         "**Practitioner (doctor/nurse)** — `POST /v1/practitioners/register` → upload each document",
         "with `POST /v1/practitioners/me/documents/presign` (×3: CMC certificate, NIC, photo) →",
         "`POST /v1/practitioners/me/credentials` with the returned keys (moves to",
@@ -263,6 +274,11 @@ export const createApp = (
         name: "Availability",
         description:
           "Practitioners publish bookable time slots; drives the next-available slot shown on discovery cards.",
+      },
+      {
+        name: "Appointments",
+        description:
+          "The booking engine: patients (caregivers) reserve a practitioner's slot for themselves or a managed dependent, then reschedule or cancel under the practitioner's policy. Practitioners read their agenda with `?scope=practitioner`.",
       },
       { name: "Reference", description: "Active profession and ISO language catalogs." },
       { name: "Qualifications", description: "Practitioner qualifications and certifications." },

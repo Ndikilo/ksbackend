@@ -6,6 +6,7 @@ import type { Health } from "@/infra/health";
 import type { Locale } from "@/infra/i18n";
 import type { RateLimiter } from "@/infra/rate-limiter";
 import type { AdminService } from "@/modules/admin/admin.service";
+import type { AppointmentService } from "@/modules/appointment/appointment.service";
 import type { AvailabilityService } from "@/modules/availability/availability.service";
 import type { DependentService } from "@/modules/dependent/dependent.service";
 import type { InvitationService } from "@/modules/invitation/invitation.service";
@@ -39,6 +40,7 @@ export type AppServices =
   | RateLimiter
   | ProfileService
   | NotificationService
+  | AppointmentService
   | PatientService
   | PatientSearchService
   | PractitionerService

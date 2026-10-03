@@ -24,6 +24,7 @@ import {
 } from "@/modules/appointment/appointment.service";
 import { DependentRepoLive } from "@/modules/dependent/dependent.repo";
 import { OfferingRepoLive } from "@/modules/offering/offering.repo";
+import { PractitionerRepoLive } from "@/modules/practitioner/practitioner.repo";
 import { databaseLayerFromUrl, startTestPostgres } from "../support/testcontainers";
 
 /**
@@ -111,6 +112,7 @@ describe("booking service (integration) — atomic slot lock", () => {
             AppointmentRepoLive.pipe(Layer.provide(Database)),
             OfferingRepoLive.pipe(Layer.provide(Database)),
             DependentRepoLive.pipe(Layer.provide(Database)),
+            PractitionerRepoLive.pipe(Layer.provide(Database)),
             IdGeneratorLive,
             Database,
           ),

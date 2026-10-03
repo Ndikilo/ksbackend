@@ -6,7 +6,14 @@ import type { ConsultationType } from "@/domain/practitioner/practitioner";
  * service enforces transitions; the DB pins the value set — see
  * `appointment_status_enum` in src/db/schema/enums.ts).
  */
-export type AppointmentStatus = "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
+export const APPOINTMENT_STATUSES = [
+  "pending",
+  "confirmed",
+  "cancelled",
+  "completed",
+  "no_show",
+] as const;
+export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 
 /** A confirmed-or-pending booking, with booking-time snapshots (P3.T1). */
 export type Appointment = {

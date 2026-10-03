@@ -1,6 +1,10 @@
 import { Cause } from "effect";
 import { describe, expect, it } from "vitest";
-import { SlotTaken } from "@/domain/appointment/errors";
+import {
+  AppointmentStarted,
+  AppointmentStateInvalid,
+  SlotTaken,
+} from "@/domain/appointment/errors";
 import {
   Conflict,
   LicenceAlreadyRegistered,
@@ -40,6 +44,18 @@ describe("causeToError", () => {
     expect(mapped.status).toBe(409);
     expect(mapped.code).toBe("SLOT_TAKEN");
     expect(mapped.params).toEqual({});
+  });
+
+  it("maps appointment policy violations to stable 409 codes (P3.T3)", () => {
+    const state = causeToError(Cause.fail(new AppointmentStateInvalid({ current: "cancelled" })));
+    expect(state.status).toBe(409);
+    expect(state.code).toBe("APPOINTMENT_STATE_INVALID");
+    expect(state.params).toEqual({ current: "cancelled" });
+
+    const started = causeToError(Cause.fail(new AppointmentStarted({})));
+    expect(started.status).toBe(409);
+    expect(started.code).toBe("APPOINTMENT_STARTED");
+    expect(started.params).toEqual({});
   });
 
   it("maps unknown failures and defects to 500 INTERNAL", () => {

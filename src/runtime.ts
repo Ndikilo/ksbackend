@@ -169,9 +169,20 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
   );
   const health = HealthLive.pipe(Layer.provide(database));
   // Booking runs multi-write transactions (slot lock + appointment + slot flip)
-  // — `database` provides the shared SqlClient (see note above).
+  // — `database` provides the shared SqlClient (see note above). The
+  // practitioner repo resolves the caller's profile for role-aware reads and
+  // the party check on single-appointment access (P3.T3).
   const appointment = AppointmentServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(appointmentRepo, offeringRepo, dependentRepo, idGen, database)),
+    Layer.provide(
+      Layer.mergeAll(
+        appointmentRepo,
+        offeringRepo,
+        dependentRepo,
+        practitionerRepo,
+        idGen,
+        database,
+      ),
+    ),
   );
 
   return Layer.mergeAll(
