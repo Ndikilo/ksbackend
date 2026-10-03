@@ -40,6 +40,21 @@ quarantined at the HTTP edge:
 - The auth instance is **passed to `createApp(runtime, auth)`** as a parameter, not a runtime
   service — tests build the app with a dummy instance.
 
+## Data model (booking core)
+
+One row per published bookable window: `availability_slot` (practitioner, starts/ends,
+`open|booked|cancelled`, soft-delete). Commercial terms per practitioner:
+`consultation_offering` (type × duration × price XAF, soft-delete). Patients: a `user` may book
+for themself or a `dependent` they manage (consent edge: `caregiver_link`).
+
+`appointment` (P3.T1) ties them together — one booking = patient (or dependent) × practitioner ×
+slot, with the offering's type/price and the cancellation policy SNAPSHOT-ED onto the row so
+history survives later edits. Status machine: `pending → confirmed → cancelled | completed |
+no_show`. Integrity: a partial unique index (`appointment_slot_active_unique`) admits at most one
+ACTIVE (pending/confirmed) appointment per slot — double-booking is impossible at the DB level;
+the booking service additionally locks the slot row in a transaction (P3.T2). Every FK column is
+indexed (P0.T7 discipline); lists read via `(owner, starts_at)` composite indexes.
+
 ## Swappable backends (cache, rate limiting)
 
 `Cache` and `RateLimiter` (`src/infra/`) are single tags with in-process implementations —

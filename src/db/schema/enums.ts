@@ -73,3 +73,14 @@ export const availabilityExceptionKindEnum = pgEnum("availability_exception_kind
   "blocked",
   "extra",
 ]);
+
+// Appointment status machine: pending → confirmed → cancelled | completed |
+// no_show. `cancelled` is reachable from pending or confirmed only (booking
+// service enforces the transitions; the DB pins the value set).
+export const appointmentStatusEnum = pgEnum("appointment_status", [
+  "pending",
+  "confirmed",
+  "cancelled",
+  "completed",
+  "no_show",
+]);

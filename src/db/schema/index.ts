@@ -3,6 +3,7 @@
 // better-auth CLI (`bunx @better-auth/cli generate`) — do not hand-edit it;
 // regenerate on version/plugin changes, then `bun run db:generate`.
 export * from "./admin-profile";
+export * from "./appointment";
 export * from "./auth";
 export * from "./availability-slot";
 export * from "./availability-exception";
