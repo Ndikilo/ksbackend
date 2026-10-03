@@ -37,6 +37,7 @@
     "@effect/sql-pg": "^0.53.0",
     "@hono/zod-openapi": "^1.5.1",
     "@scalar/hono-api-reference": "^0.11.12",
+    "@sentry/bun": "^11.4.0",
     "better-auth": "^1.6.25",
     "effect": "^3.22.1",
     "evlog": "^2.24.0",

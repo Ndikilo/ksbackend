@@ -65,6 +65,10 @@ export const createTestHarness = async (
     /** Wires makeAuth's beforeDelete S3 cleanup to a real (LocalStack) bucket. */
     readonly s3?: { readonly bucket: string; readonly region: string };
   },
+  appOpts?: {
+    /** Registers a test-only route that throws, to drive the 500 path. */
+    readonly throwingRoute?: boolean;
+  },
 ): Promise<TestHarness> => {
   const pg = await startTestPostgres();
   const db = drizzle(pg.url);
@@ -113,6 +117,13 @@ export const createTestHarness = async (
         },
   );
   const app = createApp(runtime, auth.instance);
+  // Test-only escape hatch: a route that always throws an unhandled error, so
+  // cross-cutting concerns (error mapping, reporting) can be driven end-to-end.
+  if (appOpts?.throwingRoute === true) {
+    app.get("/test-only/boom", () => {
+      throw new Error("boom (test-only throwing route)");
+    });
+  }
 
   const post = async (path: string, body: JsonValue, cookie?: string): Promise<Response> => {
     const headers = new Headers({ "content-type": "application/json" });

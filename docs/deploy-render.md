@@ -76,6 +76,9 @@ is used as-is.
 - `APP_ENV=prod` + real values for: `BETTER_AUTH_SECRET`, `DATABASE_URL`,
   `RESEND_API_KEY`, `S3_BUCKET`/`S3_REGION`/AWS credentials,
   `DATA_ENCRYPTION_KEY` + `DATA_HMAC_KEY` (`openssl rand -base64 32` each).
+- `SENTRY_DSN` — the api project's DSN from Sentry (error reporting is fully
+  disabled while it's unset). Events carry `request_id` + `user_roles` tags so
+  they correlate with the request logs.
 - `BETTER_AUTH_URL` and `CORS_ORIGINS` are set by the blueprint to the deployed
   https origin (`https://ksbackend-api.onrender.com` + Expo web dev); point them
   at the final production origin (e.g. a custom domain) when you have one —

@@ -11,6 +11,7 @@ import { type AuthInstance, type AuthUser, parseRoles } from "@/infra/auth";
 import { Health } from "@/infra/health";
 import { type Locale, negotiateLocale, translate } from "@/infra/i18n";
 import { RateLimiter } from "@/infra/rate-limiter";
+import { captureApiError } from "@/infra/sentry";
 import { registerAdminRoutes } from "@/modules/admin/admin.routes";
 import { registerDependentRoutes } from "@/modules/dependent/dependent.routes";
 import { registerInvitationRoutes } from "@/modules/invitation/invitation.routes";
@@ -298,7 +299,16 @@ export const createApp = (
       404,
     ),
   );
-  app.onError((error, c) => toErrorResponse(c, Cause.fail(error)));
+  // Report unhandled errors to Sentry (no-op without SENTRY_DSN) alongside the
+  // localized response; the requestId + user-role tags tie the event to logs.
+  app.onError((error, c) => {
+    captureApiError({
+      error,
+      requestId: c.get("requestId"),
+      roles: c.get("user")?.roles,
+    });
+    return toErrorResponse(c, Cause.fail(error));
+  });
 
   return app;
 };

@@ -4,10 +4,18 @@ import { loadAuthOptions, makeAuth } from "./infra/auth";
 import { AppConfig } from "./infra/config";
 import { makeConsoleClient, makeResendClient } from "./infra/email";
 import { gracefulShutdown } from "./infra/shutdown";
+import { initSentry } from "./infra/sentry";
 import { makeRuntime } from "./runtime";
 
 const { appEnv, port, corsOrigins, defaultLocale } = await Effect.runPromise(AppConfig);
 const isProd = appEnv === "prod" || appEnv === "staging";
+
+// Error reporting first: capture even bootstrap failures once configured.
+// Without SENTRY_DSN this is a no-op that never loads the SDK (zero overhead).
+await initSentry({
+  dsn: await Effect.runPromise(Config.string("SENTRY_DSN").pipe(Config.withDefault(""))),
+  environment: appEnv,
+});
 
 const runtime = makeRuntime(appEnv);
 
