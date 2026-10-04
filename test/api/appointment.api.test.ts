@@ -5,6 +5,7 @@ import { user } from "@/db/schema/auth";
 import { appointment as appointmentTable } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
+import { notificationOutbox } from "@/db/schema/notification-outbox";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { createTestHarness, type TestHarness } from "../support/app-harness";
@@ -700,6 +701,57 @@ describe("appointments API (real DB)", () => {
         .from(appointmentTable)
         .where(eq(appointmentTable.id, id));
       expect(rows[0]?.status).toBe("pending");
+    });
+  });
+
+  describe("P6.T4 — lifecycle notifications honour the stored preferences (real API + real outbox)", () => {
+    /** Outbox rows recorded for one user (the enqueue-time gate's ground truth). */
+    const outboxCount = async (userId: string): Promise<number> => {
+      const rows = await harness.db
+        .select({ id: notificationOutbox.id })
+        .from(notificationOutbox)
+        .where(eq(notificationOutbox.userId, userId));
+      return rows.length;
+    };
+
+    const setAppointmentsEmail = async (enabled: boolean): Promise<void> => {
+      const patched = await harness.app.request("/v1/me/notifications", {
+        method: "PATCH",
+        headers: { cookie: patientCookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          preferences: [{ category: "appointments", email: enabled, sms: false, push: false }],
+        }),
+      });
+      expect(patched.status).toBe(200);
+    };
+
+    it("appointments.email OFF → a booking enqueues NOTHING for the patient; the practitioner still learns", async () => {
+      await setAppointmentsEmail(false);
+      const patientBefore = await outboxCount(patientUserId);
+      const doctorId = await harness.userIdFor("doctor@example.com");
+      const doctorBefore = await outboxCount(doctorId);
+
+      const slotId = await seedSlot(practitionerId, 40 * 24 * 60);
+      const created = await book(patientCookie, { slotId, offeringId });
+      expect(created.status).toBe(201);
+
+      // The gate sits at ENQUEUE: a switched-off channel enqueues nothing, so
+      // the outbox row count is the truth about what was ever meant to be sent.
+      expect(await outboxCount(patientUserId)).toBe(patientBefore);
+      // Gating is per RECIPIENT: the practitioner (code defaults, email on)
+      // still gets the booking confirmation.
+      expect(await outboxCount(doctorId)).toBe(doctorBefore + 1);
+    });
+
+    it("turning the preference back ON restores delivery on the next transition", async () => {
+      await setAppointmentsEmail(true);
+      const patientBefore = await outboxCount(patientUserId);
+
+      const slotId = await seedSlot(practitionerId, 41 * 24 * 60);
+      const created = await book(patientCookie, { slotId, offeringId });
+      expect(created.status).toBe(201);
+
+      expect(await outboxCount(patientUserId)).toBe(patientBefore + 1);
     });
   });
 });

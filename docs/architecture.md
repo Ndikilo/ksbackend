@@ -63,6 +63,23 @@ The cancellation policy itself is practitioner-CONFIGURABLE (P3.T5):
 cancel/reschedule by that snapshot: patient cancels inside the window are allowed but marked
 `lateCancellation` (fee applies at settlement); practitioner-initiated cancels are never late.
 
+## Notification outbox & the preference gate (P6)
+
+Producers ENQUEUE, they never send inline: a transition renders its payloads (final, per-recipient
+locale, clinic-local time) and inserts `notification_outbox` rows — inside the transition's
+transaction, so rolled-back state never notifies. `scripts/notifications-worker.ts` (Render cron
+`ksbackend-notifications`) drains due rows (FOR UPDATE SKIP LOCKED) through the channel registry.
+
+**The preference gate sits at ENQUEUE, not at send.** Every producer funnels through
+`deliverableChannels(stored, available)` (`src/domain/notification/outbox.ts`): the user's stored
+per-category x per-channel matrix (`notification_preference`, managed via
+`GET|PATCH /v1/me/notifications`) INTERSECTED with the channels this deployment can address for
+them. A switched-off channel enqueues NOTHING, so the outbox row count is the truth about what was
+ever meant to be delivered; a drain never re-checks preferences (those rows already passed the
+gate). Category map: reminders + lifecycle copy -> `appointments`; the payment receipt (a
+financial record) -> `account`; security-critical email (OTP) is sent inline by auth and is
+deliberately preference-independent.
+
 ## Swappable backends (cache, rate limiting)
 
 `Cache` and `RateLimiter` (`src/infra/`) are single tags with in-process implementations —
