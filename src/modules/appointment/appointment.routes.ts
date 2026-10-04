@@ -6,6 +6,7 @@ import type { AppEnv, AppRuntime } from "@/http/app-env";
 import { makeRun } from "@/http/run";
 import { ErrorResponse } from "@/http/schemas";
 import { CurrentUser } from "@/infra/auth";
+import type { AppointmentListRow } from "./appointment.repo";
 import {
   AppointmentIdParam,
   AppointmentResponse,
@@ -37,6 +38,18 @@ const toResponse = (a: Appointment) => ({
   lateCancellation: a.lateCancellation,
   cancelledAt: a.cancelledAt === null ? null : a.cancelledAt.toISOString(),
   cancelledByUserId: a.cancelledByUserId,
+  // Persona names are LIST-only data (P7.T1): single-appointment responses
+  // name neither side — the caller is always a party to what they fetched.
+  patientName: null,
+  practitionerName: null,
+});
+
+const toListResponse = (row: AppointmentListRow) => ({
+  ...toResponse(row.appointment),
+  // The list names the OTHER side of the booking (P7.T1); the caller's own
+  // side stays null.
+  patientName: row.patientName,
+  practitionerName: row.practitionerName,
 });
 
 const book = createRoute({
@@ -86,7 +99,10 @@ const list = createRoute({
     "managed dependents' bookings. Practitioners pass `?scope=practitioner` to read their",
     "professional agenda instead (requires the doctor/nurse role — `403` — and a practitioner",
     "profile — `404`). Other users' appointments are never visible, and a forged or stale",
-    "`cursor` is `422`. Filter by `status` to split upcoming from past client-side.",
+    "`cursor` is `422`. Filter by `status` to split upcoming from past client-side. Each row",
+    "names the OTHER party: practitioner-scope rows carry `patientName` (the person booked for —",
+    "the dependent when booked for one, else the account holder); patient-scope rows carry",
+    "`practitionerName`. The caller's own side is `null`.",
   ].join(" "),
   request: { query: ListAppointmentsQuery },
   responses: {
@@ -258,7 +274,7 @@ export const registerAppointmentRoutes = (app: OpenAPIHono<AppEnv>, runtime: App
           scope: query.scope,
           status: query.status,
         });
-        return c.json({ data: page.data.map(toResponse), meta: page.meta }, 200);
+        return c.json({ data: page.data.map(toListResponse), meta: page.meta }, 200);
       }),
     );
   });

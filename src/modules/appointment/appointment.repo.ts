@@ -1,6 +1,7 @@
 import { SqlError } from "@effect/sql";
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import { and, desc, eq, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { Context, Effect, Layer } from "effect";
 
 import type {
@@ -8,8 +9,10 @@ import type {
   AppointmentStatus,
   BookingPolicy,
 } from "@/domain/appointment/appointment";
+import { user } from "@/db/schema/auth";
 import { appointment } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
+import { dependent } from "@/db/schema/dependent";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
 
 type Row = typeof appointment.$inferSelect;
@@ -17,6 +20,21 @@ type SlotRow = typeof availabilitySlot.$inferSelect;
 
 /** Keyset position for list pagination: the last row's (starts_at, id). */
 export type AppointmentCursor = { readonly startsAt: Date; readonly id: string };
+
+/**
+ * One list row: the appointment plus the COUNTERPARTY display name — persona
+ * naming for the two calendars (P7.T1). A practitioner's agenda names WHO each
+ * booking is for (the dependent when booked for one, else the account holder);
+ * a patient's list names the practitioner. Each scope leaves its own side
+ * `null` — the caller already knows their own name.
+ */
+export type AppointmentListRow = {
+  readonly appointment: Appointment;
+  /** Practitioner-scope rows: the display name of the person booked for. */
+  readonly patientName: string | null;
+  /** Patient-scope rows: the practitioner's display name. */
+  readonly practitionerName: string | null;
+};
 
 const toDomain = (r: Row): Appointment => ({
   id: r.id,
@@ -72,21 +90,26 @@ export interface AppointmentRepoService {
   /**
    * Keyset page for the booking patient (their own + their managed
    * dependents' — every booking carries the account holder's user id),
-   * newest start first, optionally filtered by status.
+   * newest start first, optionally filtered by status. Rows carry the
+   * practitioner's display name (`patientName` is null — P7.T1).
    */
   readonly listForPatient: (
     patientUserId: string,
     limit: number,
     before: AppointmentCursor | undefined,
     status: AppointmentStatus | undefined,
-  ) => Effect.Effect<ReadonlyArray<Appointment>, SqlError.SqlError>;
-  /** Keyset page of one practitioner's calendar, newest start first. */
+  ) => Effect.Effect<ReadonlyArray<AppointmentListRow>, SqlError.SqlError>;
+  /**
+   * Keyset page of one practitioner's calendar, newest start first. Rows name
+   * WHO each booking is for (dependent name when booked for a dependent, else
+   * the account holder's; `practitionerName` is null — P7.T1).
+   */
   readonly listForPractitioner: (
     practitionerProfileId: string,
     limit: number,
     before: AppointmentCursor | undefined,
     status: AppointmentStatus | undefined,
-  ) => Effect.Effect<ReadonlyArray<Appointment>, SqlError.SqlError>;
+  ) => Effect.Effect<ReadonlyArray<AppointmentListRow>, SqlError.SqlError>;
   /**
    * Cancel: stamp the audit fields + late flag in ONE guarded write. The
    * `status IN (pending, confirmed)` guard makes the state machine
@@ -147,30 +170,29 @@ const beforeCursor = (before: AppointmentCursor) =>
     and(eq(appointment.startsAt, before.startsAt), lt(appointment.id, before.id)),
   );
 
+// Shared list predicate: scope owner + optional status filter + keyset cutoff.
+const pageWhere = (
+  owner: SQL,
+  before: AppointmentCursor | undefined,
+  status: AppointmentStatus | undefined,
+) =>
+  and(
+    owner,
+    status === undefined ? undefined : eq(appointment.status, status),
+    before === undefined ? undefined : beforeCursor(before),
+  );
+
+// List ordering both scopes share: newest start first (keyset tiebreak on id).
+const pageOrder = [desc(appointment.startsAt), desc(appointment.id)] as const;
+
 export const AppointmentRepoLive = Layer.effect(
   AppointmentRepo,
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
 
-    const listPage = (
-      owner: SQL,
-      limit: number,
-      before: AppointmentCursor | undefined,
-      status: AppointmentStatus | undefined,
-    ) =>
-      db
-        .select()
-        .from(appointment)
-        .where(
-          and(
-            owner,
-            status === undefined ? undefined : eq(appointment.status, status),
-            before === undefined ? undefined : beforeCursor(before),
-          ),
-        )
-        .orderBy(desc(appointment.startsAt), desc(appointment.id))
-        .limit(limit)
-        .pipe(Effect.map((rows) => rows.map(toDomain)));
+    // The practitioner's human name rides their USER row (better-auth); an
+    // aliased join keeps it independent of the patient join (P6.T2 pattern).
+    const practitionerUser = alias(user, "practitioner_user");
 
     return {
       lockSlotById: (id) =>
@@ -247,15 +269,57 @@ export const AppointmentRepoLive = Layer.effect(
           .pipe(Effect.map((rows) => (rows[0] ? toDomain(rows[0]) : undefined))),
 
       listForPatient: (patientUserId, limit, before, status) =>
-        listPage(eq(appointment.patientUserId, patientUserId), limit, before, status),
+        db
+          .select({
+            appt: appointment,
+            practitionerName: practitionerUser.name,
+          })
+          .from(appointment)
+          .innerJoin(
+            practitionerProfile,
+            eq(appointment.practitionerProfileId, practitionerProfile.id),
+          )
+          .innerJoin(practitionerUser, eq(practitionerProfile.userId, practitionerUser.id))
+          .where(pageWhere(eq(appointment.patientUserId, patientUserId), before, status))
+          .orderBy(...pageOrder)
+          .limit(limit)
+          .pipe(
+            Effect.map((rows) =>
+              rows.map((r) => ({
+                appointment: toDomain(r.appt),
+                patientName: null,
+                practitionerName: r.practitionerName,
+              })),
+            ),
+          ),
 
       listForPractitioner: (practitionerProfileId, limit, before, status) =>
-        listPage(
-          eq(appointment.practitionerProfileId, practitionerProfileId),
-          limit,
-          before,
-          status,
-        ),
+        db
+          .select({
+            appt: appointment,
+            // WHO the booking is for: the dependent's own name when booked for
+            // one (LEFT JOIN — history survives a dependent deletion), else
+            // the account holder's (FK-guaranteed user row, the same source
+            // the lifecycle notifications name both parties by).
+            patientName: sql<string>`coalesce(${dependent.givenNames} || ' ' || ${dependent.surname}, ${user.name})`,
+          })
+          .from(appointment)
+          .innerJoin(user, eq(appointment.patientUserId, user.id))
+          .leftJoin(dependent, eq(appointment.dependentId, dependent.id))
+          .where(
+            pageWhere(eq(appointment.practitionerProfileId, practitionerProfileId), before, status),
+          )
+          .orderBy(...pageOrder)
+          .limit(limit)
+          .pipe(
+            Effect.map((rows) =>
+              rows.map((r) => ({
+                appointment: toDomain(r.appt),
+                patientName: r.patientName,
+                practitionerName: null,
+              })),
+            ),
+          ),
 
       cancelAppointment: (id, { byUserId, late, now }) =>
         db

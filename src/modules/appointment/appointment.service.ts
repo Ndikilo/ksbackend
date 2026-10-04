@@ -32,7 +32,11 @@ import { DependentRepo } from "@/modules/dependent/dependent.repo";
 import { OfferingRepo } from "@/modules/offering/offering.repo";
 import { PractitionerRepo } from "@/modules/practitioner/practitioner.repo";
 import { LifecycleNotifier } from "./notifications/notifications.service";
-import { AppointmentRepo, type AppointmentCursor } from "./appointment.repo";
+import {
+  AppointmentRepo,
+  type AppointmentCursor,
+  type AppointmentListRow,
+} from "./appointment.repo";
 
 /**
  * A slot row ready for the booking coherence checks — the shape both a real
@@ -49,7 +53,8 @@ type BookableSlot = {
 };
 
 export type AppointmentPage = {
-  readonly data: ReadonlyArray<Appointment>;
+  /** Rows name the counterparty per scope (P7.T1 persona naming). */
+  readonly data: ReadonlyArray<AppointmentListRow>;
   readonly meta: {
     readonly count: number;
     readonly limit: number;
@@ -110,7 +115,11 @@ export interface AppointmentServiceService {
    * Role-aware page: `scope: "patient"` (the default) lists the caller's own
    * + their managed dependents' bookings; `scope: "practitioner"` lists the
    * practitioner's calendar (requires the doctor/nurse role AND a practitioner
-   * profile). Newest start first, keyset-paginated on (startsAt, id).
+   * profile). Newest start first, keyset-paginated on (startsAt, id). Each row
+   * names the OTHER party (P7.T1 persona naming): patient-scope rows carry
+   * `practitionerName`, practitioner-scope rows carry `patientName` (the
+   * person booked for — dependent or account holder); the caller's own side
+   * stays null.
    */
   readonly list: (
     caller: AppointmentCaller,
@@ -441,7 +450,10 @@ export const AppointmentServiceLive = Layer.effect(
             limit: input.limit,
             nextCursor:
               hasNextPage && last
-                ? encodeAppointmentCursor({ startsAt: last.startsAt, id: last.id })
+                ? encodeAppointmentCursor({
+                    startsAt: last.appointment.startsAt,
+                    id: last.appointment.id,
+                  })
                 : null,
             hasNextPage,
           },
