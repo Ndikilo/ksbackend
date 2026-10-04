@@ -86,6 +86,18 @@ export const AvailabilityExceptionResponse = AvailabilityExceptionBody.extend({
   id: z.uuid(),
 }).openapi("AvailabilityException");
 
+export const AvailabilityExceptionsResponse = z
+  .object({
+    data: z.array(AvailabilityExceptionResponse),
+    meta: z.object({
+      count: z.number().int().nonnegative(),
+      limit: z.number().int().nonnegative(),
+      nextCursor: z.null(),
+      hasNextPage: z.literal(false),
+    }),
+  })
+  .openapi("AvailabilityExceptions");
+
 export const PublicSlotResponse = z
   .object({
     key: z.string(),

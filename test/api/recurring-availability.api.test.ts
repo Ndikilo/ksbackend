@@ -343,6 +343,49 @@ describe("recurring availability API (real DB)", () => {
     ).toEqual(["2026-09-08T13:00:00.000Z"]);
   });
 
+  it("lists the practitioner's exceptions date-ordered and owner-scoped", async () => {
+    const list = await request("GET", "/v1/practitioners/me/availability/exceptions", doctorCookie);
+    expect(list.status).toBe(200);
+    const body = await json<{
+      readonly data: ReadonlyArray<{
+        readonly id: string;
+        readonly kind: string;
+        readonly startTime: string | null;
+        readonly endTime: string | null;
+      }>;
+      readonly meta: {
+        readonly count: number;
+        readonly limit: number;
+        readonly nextCursor: null;
+        readonly hasNextPage: false;
+      };
+    }>(list);
+    // Date-ordered: the 09-07 full-day block precedes the 09-08 extra window.
+    expect(body.data.map((exception) => exception.id)).toEqual([EXCEPTION_ID, EXTRA_EXCEPTION_ID]);
+    expect(body.meta).toEqual({ count: 2, limit: 2, nextCursor: null, hasNextPage: false });
+    // A full-day block serializes null times; the extra window keeps HH:mm.
+    expect(body.data[0]).toMatchObject({ kind: "blocked", startTime: null, endTime: null });
+    expect(body.data[1]).toMatchObject({ kind: "extra", startTime: "14:00", endTime: "15:00" });
+
+    // Owner scoping: another practitioner's list is their own (empty) set.
+    const otherList = await request(
+      "GET",
+      "/v1/practitioners/me/availability/exceptions",
+      otherDoctorCookie,
+    );
+    expect(otherList.status).toBe(200);
+    expect((await json<{ readonly data: ReadonlyArray<unknown> }>(otherList)).data).toEqual([]);
+  });
+
+  it("guards the exceptions list (401 signed-out, 403 patient)", async () => {
+    expect(
+      (await request("GET", "/v1/practitioners/me/availability/exceptions", undefined)).status,
+    ).toBe(401);
+    expect(
+      (await request("GET", "/v1/practitioners/me/availability/exceptions", patientCookie)).status,
+    ).toBe(403);
+  });
+
   it("owner-scopes exception deletion and returns 404 after deletion", async () => {
     expect(
       (
@@ -380,6 +423,12 @@ describe("recurring availability API (real DB)", () => {
         )
       ).status,
     ).toBe(204);
+  });
+
+  it("the exceptions list is empty again after every deletion", async () => {
+    const list = await request("GET", "/v1/practitioners/me/availability/exceptions", doctorCookie);
+    expect(list.status).toBe(200);
+    expect((await json<{ readonly data: ReadonlyArray<unknown> }>(list)).data).toEqual([]);
   });
 
   it("applies the default fourteen-day window and rejects invalid ranges", async () => {

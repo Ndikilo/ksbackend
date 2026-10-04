@@ -97,6 +97,14 @@ export interface AvailabilityServiceService {
     Forbidden | NotFound | SqlError.SqlError,
     CurrentUser
   >;
+  /** The signed-in practitioner's exceptions, date-ordered (owner editor, P7.T2). */
+  readonly listExceptions: (
+    userId: string,
+  ) => Effect.Effect<
+    ReadonlyArray<AvailabilityException>,
+    Forbidden | NotFound | SqlError.SqlError,
+    CurrentUser
+  >;
   readonly createException: (
     userId: string,
     input: AvailabilityExceptionInput,
@@ -359,6 +367,9 @@ export const AvailabilityServiceLive = Layer.effect(
         }),
 
       listRules: (userId) => requirePractitioner(userId).pipe(Effect.flatMap(repo.listRules)),
+
+      listExceptions: (userId) =>
+        requirePractitioner(userId).pipe(Effect.flatMap(repo.listAllExceptions)),
 
       createException: (userId, input) =>
         Effect.gen(function* () {

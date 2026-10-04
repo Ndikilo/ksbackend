@@ -9,6 +9,7 @@ import {
   AvailabilityDaysResponse,
   AvailabilityExceptionBody,
   AvailabilityExceptionResponse,
+  AvailabilityExceptionsResponse,
   AvailabilityRulesResponse,
   CreateSlotBody,
   PublicSlotsResponse,
@@ -47,6 +48,24 @@ const toRuleResponse = (rule: {
   startTime: toWireTime(rule.startTime) ?? rule.startTime,
   endTime: toWireTime(rule.endTime) ?? rule.endTime,
   consultationTypes: [...rule.consultationTypes],
+});
+
+const toExceptionResponse = (e: {
+  readonly id: string;
+  readonly date: string;
+  readonly kind: "blocked" | "extra";
+  readonly startTime: string | null;
+  readonly endTime: string | null;
+  readonly consultationTypes: ReadonlyArray<"in_person" | "video" | "home_visit"> | null;
+  readonly locationId: string | null;
+}) => ({
+  id: e.id,
+  date: e.date,
+  kind: e.kind,
+  startTime: toWireTime(e.startTime),
+  endTime: toWireTime(e.endTime),
+  consultationTypes: e.consultationTypes === null ? null : [...e.consultationTypes],
+  locationId: e.locationId,
 });
 
 const create = createRoute({
@@ -128,6 +147,21 @@ const replaceRules = createRoute({
     403: { ...jsonBody(ErrorResponse), description: "Not a practitioner." },
     404: { ...jsonBody(ErrorResponse), description: "No practitioner profile." },
     422: { ...jsonBody(ErrorResponse), description: "Invalid schedule." },
+  },
+});
+const listExceptions = createRoute({
+  method: "get",
+  path: "/v1/practitioners/me/availability/exceptions",
+  tags: ["Availability"],
+  summary: "List your schedule exceptions",
+  description:
+    "Every non-deleted exception of the signed-in practitioner (blocked days/hours and extra" +
+    " availability), date-ordered. Unpaginated by design: exceptions are a small, personal set.",
+  responses: {
+    200: { ...jsonBody(AvailabilityExceptionsResponse), description: "Your exceptions." },
+    401: { ...jsonBody(ErrorResponse), description: "No valid session." },
+    403: { ...jsonBody(ErrorResponse), description: "Not a practitioner." },
+    404: { ...jsonBody(ErrorResponse), description: "No practitioner profile." },
   },
 });
 const createException = createRoute({
@@ -267,6 +301,28 @@ export const registerAvailabilityRoutes = (app: OpenAPIHono<AppEnv>, runtime: Ap
       }),
     ),
   );
+  app.openapi(listExceptions, (c) =>
+    runAuth(
+      c,
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+        const service = yield* AvailabilityService;
+        const data = yield* service.listExceptions(user.id);
+        return c.json(
+          {
+            data: data.map(toExceptionResponse),
+            meta: {
+              count: data.length,
+              limit: data.length,
+              nextCursor: null,
+              hasNextPage: false,
+            },
+          },
+          200,
+        );
+      }),
+    ),
+  );
   app.openapi(createException, (c) =>
     runAuth(
       c,
@@ -274,16 +330,7 @@ export const registerAvailabilityRoutes = (app: OpenAPIHono<AppEnv>, runtime: Ap
         const user = yield* CurrentUser;
         const service = yield* AvailabilityService;
         const created = yield* service.createException(user.id, c.req.valid("json"));
-        return c.json(
-          {
-            ...created,
-            startTime: toWireTime(created.startTime),
-            endTime: toWireTime(created.endTime),
-            consultationTypes:
-              created.consultationTypes === null ? null : [...created.consultationTypes],
-          },
-          201,
-        );
+        return c.json(toExceptionResponse(created), 201);
       }),
     ),
   );

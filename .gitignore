@@ -20,3 +20,6 @@ docs/SCAFFOLDING_PLAN.md
 docs/AUTH_PLAN.md
 docs/PROFILE_PLAN.md
 docs/plans/
+
+# Local security-scan artifacts (mimosa) — never commit
+.mimosa/

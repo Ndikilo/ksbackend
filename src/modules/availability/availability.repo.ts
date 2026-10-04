@@ -108,6 +108,10 @@ export interface AvailabilityRepoService {
     fromDate: string,
     toDate: string,
   ) => Effect.Effect<ReadonlyArray<AvailabilityException>, SqlError.SqlError>;
+  /** Every non-deleted exception of one practitioner, date-ordered (owner editor, P7). */
+  readonly listAllExceptions: (
+    practitionerProfileId: string,
+  ) => Effect.Effect<ReadonlyArray<AvailabilityException>, SqlError.SqlError>;
   readonly softDeleteException: (
     practitionerProfileId: string,
     id: string,
@@ -306,6 +310,19 @@ export const AvailabilityRepoLive = Layer.effect(
               eq(availabilityException.practitionerProfileId, practitionerProfileId),
               gte(availabilityException.date, fromDate),
               lte(availabilityException.date, toDate),
+              isNull(availabilityException.deletedAt),
+            ),
+          )
+          .orderBy(asc(availabilityException.date), asc(availabilityException.startTime))
+          .pipe(Effect.map((rows) => rows.map(exceptionToDomain))),
+
+      listAllExceptions: (practitionerProfileId) =>
+        db
+          .select()
+          .from(availabilityException)
+          .where(
+            and(
+              eq(availabilityException.practitionerProfileId, practitionerProfileId),
               isNull(availabilityException.deletedAt),
             ),
           )
