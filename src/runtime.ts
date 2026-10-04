@@ -6,6 +6,8 @@ import { Geocoder, GeocoderFakeLive, GeocoderNominatimLive } from "./infra/geoco
 import { HealthLive } from "./infra/health";
 import { IdGeneratorLive } from "./infra/ids";
 import { LoggerLive } from "./infra/logger";
+import { NotificationChannels } from "./infra/notifications/channel";
+import { NotificationChannelsLive } from "./infra/notifications/registry";
 import { PaymentProviders } from "./infra/payments/provider";
 import { PaymentProvidersLive } from "./infra/payments/registry";
 import { RateLimiterInMemoryLive } from "./infra/rate-limiter";
@@ -25,6 +27,8 @@ import { LocationRepoLive } from "./modules/location/location.repo";
 import { LocationServiceLive } from "./modules/location/location.service";
 import { NotificationRepoLive } from "./modules/notification/notification.repo";
 import { NotificationServiceLive } from "./modules/notification/notification.service";
+import { OutboxRepoLive } from "./modules/outbox/outbox.repo";
+import { OutboxServiceLive } from "./modules/outbox/outbox.service";
 import { OfferingRepoLive } from "./modules/offering/offering.repo";
 import { OfferingServiceLive } from "./modules/offering/offering.service";
 import { PatientRepoLive } from "./modules/patient/patient.repo";
@@ -57,6 +61,9 @@ export type InfraLayers = {
   /** Mobile-money rails (P5.T3): the real env-configured adapters, or a
    *  scripted fake under test. Unset credentials fail per call, never at boot. */
   readonly payments: Layer.Layer<PaymentProviders, unknown, never>;
+  /** Delivery channels (P6.T1): Resend email + Expo push + SMS, or a
+   *  scripted fake under test. Unset credentials fail per call, never at boot. */
+  readonly channels: Layer.Layer<NotificationChannels, unknown, never>;
 };
 
 /**
@@ -70,6 +77,7 @@ export const fakeInfra: InfraLayers = {
   scanner: FileScannerCleanLive,
   geocoder: GeocoderFakeLive,
   payments: PaymentProvidersLive,
+  channels: NotificationChannelsLive,
 };
 
 /**
@@ -201,6 +209,12 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
   const payment = PaymentServiceLive.pipe(
     Layer.provide(Layer.mergeAll(paymentRepo, appointmentRepo, idGen, infra.payments, database)),
   );
+  // The notification outbox (P6.T1): enqueue inserts; drain claims in one
+  // transaction (shared SqlClient) then sends through the channel registry.
+  const outboxRepo = OutboxRepoLive.pipe(Layer.provide(database));
+  const outbox = OutboxServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(outboxRepo, infra.channels, idGen, database)),
+  );
 
   return Layer.mergeAll(
     profile,
@@ -222,6 +236,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     health,
     appointment,
     payment,
+    outbox,
     RateLimiterInMemoryLive,
     LoggerLive,
   );
@@ -240,6 +255,7 @@ export const infraFor = (appEnv: string): InfraLayers => ({
   scanner: appEnv === "prod" || appEnv === "staging" ? FileScannerS3Live : FileScannerCleanLive,
   geocoder: appEnv === "prod" || appEnv === "staging" ? GeocoderNominatimLive : GeocoderFakeLive,
   payments: PaymentProvidersLive,
+  channels: NotificationChannelsLive,
 });
 
 /** Build the one application runtime (production entry). */

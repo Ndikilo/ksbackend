@@ -11,6 +11,8 @@ import { type EmailClient, EmailSender, type EmailMessage } from "@/infra/email"
 import { GeocoderFakeLive } from "@/infra/geocoding";
 import { type PaymentProviders } from "@/infra/payments/provider";
 import { PaymentProvidersLive } from "@/infra/payments/registry";
+import { type NotificationChannels } from "@/infra/notifications/channel";
+import { NotificationChannelsLive } from "@/infra/notifications/registry";
 import { FileScanner, type ScanStatus } from "@/infra/scanner";
 import { FileStorageFakeLive } from "@/infra/storage";
 import { makeAppLayer } from "@/runtime";
@@ -77,6 +79,12 @@ export const createTestHarness = async (
      * fail per call, which is exactly the not-configured path under test.
      */
     readonly payments?: Layer.Layer<PaymentProviders>;
+    /**
+     * Overrides the notification channels (P6.T1). Default: the REAL
+     * env-configured registry — email rides the capturing sender, push/SMS
+     * fail per call without credentials (the not-configured path).
+     */
+    readonly channels?: Layer.Layer<NotificationChannels>;
   },
 ): Promise<TestHarness> => {
   const pg = await startTestPostgres();
@@ -96,6 +104,7 @@ export const createTestHarness = async (
     scanner: scannerFake,
     geocoder: GeocoderFakeLive,
     payments: appOpts?.payments ?? PaymentProvidersLive,
+    channels: appOpts?.channels ?? NotificationChannelsLive,
   });
   const appLayer =
     config === undefined

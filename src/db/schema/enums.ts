@@ -98,3 +98,16 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 
 /** Mobile-money rails (P5.T1 adapters). */
 export const paymentProviderEnum = pgEnum("payment_provider", ["momo", "orange_money"]);
+
+/** Delivery channels for the notification outbox (P6.T1). */
+export const notificationChannelEnum = pgEnum("notification_channel", ["email", "push", "sms"]);
+
+/** Outbox delivery lifecycle (P6.T1): pending → sending → sent; a failed
+ *  attempt stays eligible after backoff until the retry budget runs out. */
+export const outboxStatusEnum = pgEnum("outbox_status", [
+  "pending",
+  "sending",
+  "sent",
+  "failed",
+  "dead",
+]);
