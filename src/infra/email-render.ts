@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import * as Handlebars from "handlebars";
 
 import type { ReminderHorizon } from "@/domain/reminder/reminder";
+import { lifecycleNameParam, type LifecycleVariant } from "@/domain/appointment/notifications";
 import { type Locale, translate } from "./i18n";
 
 // Templates (HTML structure) live as .hbs files; the localized COPY lives in the
@@ -63,6 +64,15 @@ export type EmailScenario =
       /** The appointment start — rendered clinic-local, never server-local. */
       readonly when: Date;
       readonly practitionerName: string;
+    }
+  | {
+      readonly kind: "appointment";
+      /** The lifecycle copy variant (domain/appointment/notifications.ts). */
+      readonly variant: LifecycleVariant;
+      /** The appointment start — rendered clinic-local, never server-local. */
+      readonly when: Date;
+      /** The OTHER party's name: `lifecycleNameParam(variant)` decides whose. */
+      readonly counterpart: string;
     };
 
 export type RenderedEmail = { readonly subject: string; readonly html: string };
@@ -134,6 +144,22 @@ export const renderEmail = (scenario: EmailScenario, locale: Locale): RenderedEm
         message: t(`${ns}.body`, { when, practitioner: scenario.practitionerName }),
       });
       return wrap(t(`${ns}.subject`, { when }), body);
+    }
+    case "appointment": {
+      // Lifecycle copy (P6.T3): the variant picks the namespace; the name param
+      // (patient vs practitioner) comes from the SAME domain table the
+      // orchestration reads — the copy and the payload can never disagree.
+      const ns = `emails.appointment.${scenario.variant}`;
+      const when = formatClinicInstant(locale, scenario.when);
+      const params =
+        lifecycleNameParam(scenario.variant) === "patient"
+          ? { when, patient: scenario.counterpart }
+          : { when, practitioner: scenario.counterpart };
+      const body = noticeTemplate({
+        heading: t(`${ns}.heading`),
+        message: t(`${ns}.body`, params),
+      });
+      return wrap(t(`${ns}.subject`, params), body);
     }
   }
 };

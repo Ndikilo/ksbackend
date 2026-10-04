@@ -155,7 +155,7 @@ export const ReminderSchedulerLive = Layer.effect(
                 recipient: candidate.patientEmail,
                 payload,
                 availableAt: now,
-                dedupKey: reminderDedupKey(candidate.id, horizon),
+                dedupKey: reminderDedupKey(candidate.id, horizon, channel),
               });
               if (row === undefined) duplicates += 1;
               else enqueued += 1;

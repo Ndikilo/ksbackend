@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { LIFECYCLE_VARIANTS } from "@/domain/appointment/notifications";
+
 import { renderEmail, type ReceiptEmailData } from "./email-render";
 
 /**
@@ -124,5 +126,86 @@ describe("renderEmail (reminder, P6.T2)", () => {
         expect(email.html).not.toMatch(/emails\.|\{when\}|\{practitioner\}/);
       }
     }
+  });
+});
+
+describe("renderEmail (appointment lifecycle, P6.T3)", () => {
+  // 2026-03-30T09:00Z = 10:00 in Africa/Douala (fixed +1, no DST).
+  const WHEN: Date = (() => {
+    const at = new Date(0);
+    at.setUTCFullYear(2026, 2, 30);
+    at.setUTCHours(9, 0, 0, 0);
+    return at;
+  })();
+
+  const expectedWhen = (locale: "en" | "fr"): string =>
+    new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Africa/Douala",
+    }).format(WHEN);
+
+  it("renders patient-side copy with the practitioner's name (en + fr)", () => {
+    const en = renderEmail(
+      { kind: "appointment", variant: "confirmed-patient", when: WHEN, counterpart: "Dr Ngo Bell" },
+      "en",
+    );
+    expect(en.subject).toBe(`Appointment confirmed — ${expectedWhen("en")}`);
+    expect(en.html).toContain("Dr Ngo Bell");
+    expect(en.html).toContain(expectedWhen("en"));
+    expect(en.html).toContain("KanaSanté — connecting you to trusted care.");
+
+    const fr = renderEmail(
+      { kind: "appointment", variant: "confirmed-patient", when: WHEN, counterpart: "Dr Ngo Bell" },
+      "fr",
+    );
+    expect(fr.subject).toBe(`Rendez-vous confirmé — ${expectedWhen("fr")}`);
+    expect(fr.html).toContain("Dr Ngo Bell");
+    expect(fr.html).not.toContain("is confirmed");
+  });
+
+  it("renders practitioner-side copy with the PATIENT's name (the domain table decides)", () => {
+    const fr = renderEmail(
+      {
+        kind: "appointment",
+        variant: "cancelled-by-patient",
+        when: WHEN,
+        counterpart: "Ada Ngono",
+      },
+      "fr",
+    );
+    expect(fr.subject).toContain("annulé par le patient");
+    expect(fr.html).toContain("Ada Ngono");
+    expect(fr.html).not.toContain("Dr Ngo Bell");
+  });
+
+  it("every variant renders in both locales with no raw keys (the full copy table)", () => {
+    for (const locale of ["en", "fr"] as const) {
+      for (const variant of LIFECYCLE_VARIANTS) {
+        const email = renderEmail(
+          { kind: "appointment", variant, when: WHEN, counterpart: "Counterpart Name" },
+          locale,
+        );
+        // A rendered subject that IS the namespace means a missing translation.
+        expect(email.subject).not.toMatch(/emails\.|\{when\}|\{patient\}|\{practitioner\}/);
+        expect(email.html).not.toMatch(/emails\.|\{when\}|\{patient\}|\{practitioner\}/);
+        expect(email.subject.length).toBeGreaterThan(10);
+        expect(email.html).toContain("Counterpart Name");
+        expect(email.html).toContain(expectedWhen(locale));
+      }
+    }
+  });
+
+  it("the locales genuinely diverge (a missing fr key falls back visibly)", () => {
+    const en = renderEmail(
+      { kind: "appointment", variant: "declined", when: WHEN, counterpart: "Dr Ngo Bell" },
+      "en",
+    );
+    const fr = renderEmail(
+      { kind: "appointment", variant: "declined", when: WHEN, counterpart: "Dr Ngo Bell" },
+      "fr",
+    );
+    expect(en.subject).not.toBe(fr.subject);
+    expect(en.html).not.toBe(fr.html);
   });
 });

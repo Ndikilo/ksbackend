@@ -17,6 +17,8 @@ import { AdminRepoLive } from "./modules/admin/admin.repo";
 import { AdminServiceLive } from "./modules/admin/admin.service";
 import { AppointmentRepoLive } from "./modules/appointment/appointment.repo";
 import { AppointmentServiceLive } from "./modules/appointment/appointment.service";
+import { LifecycleRepoLive } from "./modules/appointment/notifications/notifications.repo";
+import { LifecycleNotifierLive } from "./modules/appointment/notifications/notifications.service";
 import { AvailabilityRepoLive } from "./modules/availability/availability.repo";
 import { AvailabilityServiceLive } from "./modules/availability/availability.service";
 import { DependentRepoLive } from "./modules/dependent/dependent.repo";
@@ -187,11 +189,26 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     Layer.provide(Layer.mergeAll(invitationRepo, idGen, infra.email, database)),
   );
   const health = HealthLive.pipe(Layer.provide(database));
+  // The notification outbox (P6.T1): enqueue inserts; drain claims in one
+  // transaction (shared SqlClient) then sends through the channel registry.
+  const outboxRepo = OutboxRepoLive.pipe(Layer.provide(database));
+  const outbox = OutboxServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(outboxRepo, infra.channels, idGen, database)),
+  );
+  // The lifecycle notifier (P6.T3): identity reads + preference-gated,
+  // dedup-keyed enqueues for appointment transitions — consumed by the
+  // appointment service (booked/rescheduled/cancelled/declined) and the
+  // payment service (confirmed + receipt, refund cancel).
+  const lifecycleRepo = LifecycleRepoLive.pipe(Layer.provide(database));
+  const lifecycleNotifier = LifecycleNotifierLive.pipe(
+    Layer.provide(Layer.mergeAll(lifecycleRepo, outbox)),
+  );
   // Booking runs multi-write transactions (slot lock + appointment + slot flip)
   // — `database` provides the shared SqlClient (see note above). The
   // availability repo materializes rule/exception windows into slot rows (P4);
   // the practitioner repo resolves the caller's profile for role-aware reads
-  // and the party check on single-appointment access (P3.T3).
+  // and the party check on single-appointment access (P3.T3). Lifecycle
+  // notifications enqueue inside those transactions (P6.T3).
   const appointment = AppointmentServiceLive.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -200,6 +217,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
         offeringRepo,
         dependentRepo,
         practitionerRepo,
+        lifecycleNotifier,
         idGen,
         database,
       ),
@@ -208,14 +226,19 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
   // Checkout (P5.T3) runs multi-write transactions (charge flip + appointment
   // confirm / refund + cancel + slot free) — `database` provides the shared
   // SqlClient; the appointment repo is the atomic tie to the booking state.
+  // The notifier enqueues the confirmation/receipt + refund-cancel emails
+  // inside those same transactions (P6.T3).
   const payment = PaymentServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(paymentRepo, appointmentRepo, idGen, infra.payments, database)),
-  );
-  // The notification outbox (P6.T1): enqueue inserts; drain claims in one
-  // transaction (shared SqlClient) then sends through the channel registry.
-  const outboxRepo = OutboxRepoLive.pipe(Layer.provide(database));
-  const outbox = OutboxServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(outboxRepo, infra.channels, idGen, database)),
+    Layer.provide(
+      Layer.mergeAll(
+        paymentRepo,
+        appointmentRepo,
+        lifecycleNotifier,
+        idGen,
+        infra.payments,
+        database,
+      ),
+    ),
   );
   // The reminder scheduler (P6.T2): scans confirmed appointments entering
   // their 24h/1h windows and enqueues through the outbox (dedup-keyed), then

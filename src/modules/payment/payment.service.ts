@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { AppointmentStateInvalid } from "@/domain/appointment/errors";
 import type { Appointment } from "@/domain/appointment/appointment";
+import { cancelScenario } from "@/domain/appointment/notifications";
 import {
   PaymentDeclined,
   PaymentProviderUnavailable,
@@ -15,6 +16,7 @@ import { IdGenerator } from "@/infra/ids";
 import { PaymentProviderError, PaymentProviders } from "@/infra/payments/provider";
 import { verifyWebhookSignature } from "@/infra/payments/webhook-signature";
 import { AppointmentRepo } from "@/modules/appointment/appointment.repo";
+import { LifecycleNotifier } from "@/modules/appointment/notifications/notifications.service";
 import { PaymentRepo } from "./payment.repo";
 
 /**
@@ -156,6 +158,7 @@ export const PaymentServiceLive = Layer.effect(
     const payments = yield* PaymentRepo;
     const appointments = yield* AppointmentRepo;
     const providers = yield* PaymentProviders;
+    const notifier = yield* LifecycleNotifier;
     const ids = yield* IdGenerator;
     const sql = yield* SqlClient.SqlClient;
 
@@ -297,6 +300,30 @@ export const PaymentServiceLive = Layer.effect(
             // A meanwhile-cancelled booking stays cancelled — the money is
             // held for the admin refund flow.
             yield* appointments.confirmAppointment(final.appointmentId, at);
+            // P6.T3: the confirmation + the payment receipt ride the outbox,
+            // enqueued in the SAME transaction as the guarded writes (a charge
+            // that rolls back never notifies; the receipt dedup keys on the
+            // payment id, so a re-delivered webhook enqueues nothing extra).
+            const confirmed = yield* appointments.findById(final.appointmentId);
+            if (confirmed !== undefined) {
+              yield* notifier.notify({
+                appointment: confirmed,
+                scenario: "confirmed",
+                actor: "practitioner",
+              });
+            }
+            if (final.receiptNumber !== null && final.receiptIssuedAt !== null) {
+              yield* notifier.receipt({
+                patientUserId: final.payerUserId,
+                payment: {
+                  id: final.id,
+                  receiptNumber: final.receiptNumber,
+                  amountXaf: final.amountXaf,
+                  provider: final.provider,
+                  receiptIssuedAt: final.receiptIssuedAt,
+                },
+              });
+            }
           }
           return final;
         }),
@@ -392,6 +419,13 @@ export const PaymentServiceLive = Layer.effect(
             });
             if (cancelled !== undefined) {
               yield* appointments.markSlotOpen(appointment.slotId, at);
+              // P6.T3: a refund-driven cancellation notifies both parties with
+              // the clinic copy (the money is being returned) — in-transaction.
+              yield* notifier.notify({
+                appointment,
+                scenario: cancelScenario("admin", appointment.status),
+                actor: "admin",
+              });
             }
           }
           return refunded;

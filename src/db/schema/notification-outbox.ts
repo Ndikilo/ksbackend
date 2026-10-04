@@ -48,8 +48,8 @@ export const notificationOutbox = pgTable(
     lastError: text("last_error"),
     // Provider handle after an accepted send (Resend id / Expo ticket / SMS sid).
     providerMessageId: text("provider_message_id"),
-    // Producer-minted idempotency guard (P6.T2): `reminder-24h:<appointmentId>`
-    // and friends. Two racing scheduler scans INSERT the same key; the UNIQUE
+    // Producer-minted idempotency guard (P6.T2): `reminder-24h:<appointmentId>:<channel>`
+    // and friends. Two racing producers INSERT the same key; the UNIQUE
     // index + ON CONFLICT DO NOTHING keep exactly one row — double-enqueue is
     // impossible at the database level (same discipline as payment.idempotency
     // _key). NULL (ad-hoc sends) never conflicts: Postgres treats NULLs as

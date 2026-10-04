@@ -20,6 +20,7 @@ import {
   AppointmentStateInvalid,
   SlotTaken,
 } from "@/domain/appointment/errors";
+import { cancelScenario, type LifecycleActor } from "@/domain/appointment/notifications";
 import { judgeCancellation, judgeReschedule } from "@/domain/appointment/policy";
 import type { ConsultationType } from "@/domain/practitioner/practitioner";
 import { Forbidden, NotFound, ValidationFailed } from "@/domain/shared/errors";
@@ -30,6 +31,7 @@ import { AvailabilityRepo } from "@/modules/availability/availability.repo";
 import { DependentRepo } from "@/modules/dependent/dependent.repo";
 import { OfferingRepo } from "@/modules/offering/offering.repo";
 import { PractitionerRepo } from "@/modules/practitioner/practitioner.repo";
+import { LifecycleNotifier } from "./notifications/notifications.service";
 import { AppointmentRepo, type AppointmentCursor } from "./appointment.repo";
 
 /**
@@ -184,6 +186,7 @@ export const AppointmentServiceLive = Layer.effect(
     const offerings = yield* OfferingRepo;
     const dependents = yield* DependentRepo;
     const practitioners = yield* PractitionerRepo;
+    const notifier = yield* LifecycleNotifier;
     const ids = yield* IdGenerator;
     const sql = yield* SqlClient.SqlClient;
 
@@ -394,6 +397,10 @@ export const AppointmentServiceLive = Layer.effect(
               updatedAt: at,
             });
             yield* repo.markSlotBooked(slot.id, at);
+            // P6.T3: the booking confirmation rides the outbox, enqueued in the
+            // SAME transaction — a rolled-back booking never notifies. The
+            // dedup key makes a retried book() a no-op at the outbox.
+            yield* notifier.notify({ appointment, scenario: "booked", actor: "patient" });
             return appointment;
           }),
         );
@@ -478,6 +485,16 @@ export const AppointmentServiceLive = Layer.effect(
             now: at,
           });
           yield* repo.markSlotOpen(appointment.slotId, at);
+          // P6.T3: both parties learn who cancelled. A practitioner cancelling
+          // a still-PENDING request DECLINED it — different scenario, different
+          // copy (domain/appointment/notifications.ts). Enqueued in-transaction.
+          const actor: LifecycleActor =
+            appointment.patientUserId === caller.id ? "patient" : "practitioner";
+          yield* notifier.notify({
+            appointment: cancelled,
+            scenario: cancelScenario(actor, appointment.status),
+            actor,
+          });
           return cancelled;
         }),
       );
@@ -551,12 +568,23 @@ export const AppointmentServiceLive = Layer.effect(
           }
 
           yield* repo.markSlotOpen(appointment.slotId, at);
-          return yield* repo.rescheduleAppointment(id, {
+          const moved = yield* repo.rescheduleAppointment(id, {
             slotId: slot.id,
             startsAt: slot.startsAt,
             endsAt: slot.endsAt,
             now: at,
           });
+          // P6.T3: both parties learn the NEW time. The dedup key carries the
+          // transition instant — rescheduling is repeatable, and a move back to
+          // an earlier time must notify again (a content-only key would dedup
+          // it and the parties would believe the stale time).
+          yield* notifier.notify({
+            appointment: moved,
+            scenario: "rescheduled",
+            actor: appointment.patientUserId === caller.id ? "patient" : "practitioner",
+            sequence: at.getTime(),
+          });
+          return moved;
         }),
       );
 

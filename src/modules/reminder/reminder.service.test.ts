@@ -160,8 +160,8 @@ it.effect("enqueues both horizons for a due candidate with the exact outbox shap
     expect(fakes.drainedCount()).toBe(1);
 
     expect(fakes.enqueues.map((e) => e.dedupKey)).toEqual([
-      "reminder-24h:apt-1",
-      "reminder-1h:apt-1",
+      "reminder-24h:apt-1:email",
+      "reminder-1h:apt-1:email",
     ]);
     expect(fakes.enqueues.map((e) => e.scenario)).toEqual(["reminder-24h", "reminder-1h"]);
     for (const enqueue of fakes.enqueues) {
@@ -219,7 +219,7 @@ it.effect("counts a dedup key the outbox already holds as a duplicate (no second
   Effect.gen(function* () {
     const fakes = makeFakes({
       candidates: [candidateRow()],
-      existingKeys: new Set(["reminder-24h:apt-1"]),
+      existingKeys: new Set(["reminder-24h:apt-1:email"]),
     });
     const summary = yield* Effect.flatMap(ReminderScheduler, (service) =>
       service.run({ now: NOW }),
@@ -227,7 +227,7 @@ it.effect("counts a dedup key the outbox already holds as a duplicate (no second
 
     expect(summary.enqueued).toBe(1); // only the 1h horizon is new
     expect(summary.duplicates).toBe(1);
-    expect(fakes.enqueues.map((e) => e.dedupKey)).toEqual(["reminder-1h:apt-1"]);
+    expect(fakes.enqueues.map((e) => e.dedupKey)).toEqual(["reminder-1h:apt-1:email"]);
   }),
 );
 
@@ -250,7 +250,7 @@ it.effect("skips cancelled appointments (cancelled before send) and late booking
     // cancelled: both horizons skip; late: 24h skips, 1h enqueues.
     expect(summary.skipped).toBe(3);
     expect(summary.enqueued).toBe(1);
-    expect(fakes.enqueues.map((e) => e.dedupKey)).toEqual(["reminder-1h:apt-late"]);
+    expect(fakes.enqueues.map((e) => e.dedupKey)).toEqual(["reminder-1h:apt-late:email"]);
   }),
 );
 

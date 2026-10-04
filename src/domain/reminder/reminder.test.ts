@@ -69,9 +69,14 @@ describe("reminder horizons (P6.T2)", () => {
     expect(DST_START.getTime() - DUE_24H.getTime()).toBe(DAY_MS);
   });
 
-  it("dedup keys and scenarios distinguish horizons and pin the appointment", () => {
-    expect(reminderDedupKey("apt-1", "24h")).toBe("reminder-24h:apt-1");
-    expect(reminderDedupKey("apt-1", "1h")).toBe("reminder-1h:apt-1");
+  it("dedup keys distinguish horizon AND channel (one key per outbox row)", () => {
+    expect(reminderDedupKey("apt-1", "24h", "email")).toBe("reminder-24h:apt-1:email");
+    expect(reminderDedupKey("apt-1", "1h", "email")).toBe("reminder-1h:apt-1:email");
+    // The UNIQUE index is global: two channels sharing a key would silently
+    // swallow each other once a second channel becomes deliverable (P6.T3).
+    expect(reminderDedupKey("apt-1", "24h", "push")).not.toBe(
+      reminderDedupKey("apt-1", "24h", "email"),
+    );
     expect(reminderScenario["24h"]).toBe("reminder-24h");
     expect(reminderScenario["1h"]).toBe("reminder-1h");
     expect(REMINDER_HORIZONS).toEqual(["24h", "1h"]);

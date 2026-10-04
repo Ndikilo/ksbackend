@@ -12,8 +12,12 @@
  */
 
 import type { AppointmentStatus } from "@/domain/appointment/appointment";
-import { defaultChannels, type ChannelPreferences } from "@/domain/notification/notification";
-import { OUTBOX_CHANNELS, type OutboxChannel } from "@/domain/notification/outbox";
+import { deliverableChannels, type OutboxChannel } from "@/domain/notification/outbox";
+
+// The preference intersection lives beside OUTBOX_CHANNELS (P6.T3 moved it
+// there so lifecycle notifications gate through the same function); re-exported
+// here for the reminder call sites and tests.
+export { deliverableChannels };
 
 /** How far ahead of the appointment each reminder fires. */
 export type ReminderHorizon = "24h" | "1h";
@@ -41,14 +45,19 @@ export const reminderDueAt = (startsAt: Date, horizon: ReminderHorizon): Date =>
   new Date(startsAt.getTime() - REMINDER_LEAD_MS[horizon]);
 
 /**
- * Outbox dedup key for one (appointment, horizon) reminder. The outbox's
- * UNIQUE dedup_key column makes double-enqueue impossible under concurrency:
- * two racing scheduler scans INSERT the same key, Postgres keeps one
- * (ON CONFLICT DO NOTHING). The same primitive guards P6.T3 lifecycle
- * notifications.
+ * Outbox dedup key for one (appointment, horizon, channel) reminder. The
+ * outbox's UNIQUE dedup_key column makes double-enqueue impossible under
+ * concurrency: two racing scheduler scans INSERT the same key, Postgres keeps
+ * one (ON CONFLICT DO NOTHING). The CHANNEL is part of the key because the
+ * index is global — the P6.T3 generalization (lifecycleDedupKey) applies it to
+ * every producer: two channels of one reminder sharing a key would silently
+ * swallow each other the moment a second channel becomes deliverable.
  */
-export const reminderDedupKey = (appointmentId: string, horizon: ReminderHorizon): string =>
-  `reminder-${horizon}:${appointmentId}`;
+export const reminderDedupKey = (
+  appointmentId: string,
+  horizon: ReminderHorizon,
+  channel: OutboxChannel,
+): string => `reminder-${horizon}:${appointmentId}:${channel}`;
 
 /** Outbox scenario (template key) per horizon — failures()/inspection read it. */
 export const reminderScenario = {
@@ -98,18 +107,4 @@ export const judgeReminder = (
   }
   if (now.getTime() < dueAt.getTime()) return { action: "wait" };
   return { action: "enqueue" };
-};
-
-/**
- * Which channels a reminder may use: the user's `appointments` category
- * preference (code defaults when unset — P6.T4 builds the UI on the same
- * table) INTERSECTED with the channels this deployment can actually address
- * (today: email; SMS/push join when a phone/token source exists).
- */
-export const deliverableChannels = (
-  stored: ChannelPreferences | undefined,
-  available: Partial<Record<OutboxChannel, string>>,
-): ReadonlyArray<OutboxChannel> => {
-  const prefs = stored ?? defaultChannels("appointments");
-  return OUTBOX_CHANNELS.filter((channel) => prefs[channel] && available[channel] !== undefined);
 };

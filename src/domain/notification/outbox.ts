@@ -18,6 +18,7 @@
  */
 
 import type { NotificationCategory } from "./notification";
+import { defaultChannels, type ChannelPreferences } from "./notification";
 
 export type OutboxChannel = "email" | "push" | "sms";
 
@@ -98,3 +99,20 @@ export const failureOutcome = (
   attemptsAfterFailure >= OUTBOX_MAX_ATTEMPTS
     ? { status: "dead", availableAt: "none" }
     : { status: "failed", availableAt: "backoff" };
+
+/**
+ * Which channels a notification for this category may actually use (P6.T2/T4):
+ * the user's stored preference INTERSECTED with the channels this deployment
+ * can address for THEM (an email address / a stored device token / a phone
+ * identity). Gating happens here, at ENQUEUE time — a switched-off channel
+ * enqueues NOTHING (rather than enqueueing a row a later stage drops), so the
+ * outbox row count is the truth about what was ever meant to be delivered.
+ * Lives beside OUTBOX_CHANNELS so every producer gates through one function.
+ */
+export const deliverableChannels = (
+  stored: ChannelPreferences | undefined,
+  available: Partial<Record<OutboxChannel, string>>,
+): ReadonlyArray<OutboxChannel> => {
+  const prefs = stored ?? defaultChannels("appointments");
+  return OUTBOX_CHANNELS.filter((channel) => prefs[channel] && available[channel] !== undefined);
+};

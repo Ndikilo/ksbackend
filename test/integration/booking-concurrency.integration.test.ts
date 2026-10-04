@@ -24,6 +24,7 @@ import {
   AppointmentService,
   AppointmentServiceLive,
 } from "@/modules/appointment/appointment.service";
+import { LifecycleNotifier } from "@/modules/appointment/notifications/notifications.service";
 import { DependentRepoLive } from "@/modules/dependent/dependent.repo";
 import { OfferingRepoLive } from "@/modules/offering/offering.repo";
 import { PractitionerRepoLive } from "@/modules/practitioner/practitioner.repo";
@@ -41,6 +42,16 @@ import { databaseLayerFromUrl, startTestPostgres } from "../support/testcontaine
 type BookingError = SlotTaken | ValidationFailed | NotFound | Forbidden | SqlError.SqlError;
 
 type BookAppointmentOutput = import("@/domain/appointment/appointment").Appointment;
+
+/**
+ * The lifecycle notifier is out of scope here (concurrency of the SLOT LOCK is
+ * the subject) — the book() path enqueues through it in-transaction, so a
+ * no-op fake keeps the layer graph total without touching the outbox.
+ */
+const LifecycleNotifierFake = Layer.succeed(LifecycleNotifier, {
+  notify: () => Effect.succeed({ enqueued: 0, duplicates: 0 }),
+  receipt: () => Effect.succeed({ enqueued: 0, duplicates: 0 }),
+});
 
 /** The typed failure of a settled booking (undefined on success). */
 const failureOf = (
@@ -116,6 +127,7 @@ describe("booking service (integration) — atomic slot lock", () => {
             OfferingRepoLive.pipe(Layer.provide(Database)),
             DependentRepoLive.pipe(Layer.provide(Database)),
             PractitionerRepoLive.pipe(Layer.provide(Database)),
+            LifecycleNotifierFake,
             IdGeneratorLive,
             Database,
           ),
