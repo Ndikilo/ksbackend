@@ -42,6 +42,11 @@ const json = <T>(res: Response): Promise<T> => res.json() as Promise<T>;
  *   booking cancelled (money held for refund);
  * - status polling reconciles on read (provider decided ⇒ same funnel as the
  *   webhook; provider trouble never fails the read);
+ * - P5.T6 timeout reconciliation: a provider-side TIMEOUT/expiry reconciles to
+ *   `failed` on poll (booking stays pending), and the FIRST decision wins
+ *   across paths — a late duplicate webhook after a poll decision is a no-op,
+ *   and a late CONTRADICTORY webhook (succeeded after a timed-out `failed`)
+ *   cannot confirm the booking;
  * - refund (admin-only): charge `refunded` + booking `cancelled` + slot freed
  *   atomically; double refund / non-succeeded refund → 409;
  * - receipts (P5.T4): a succeeded charge is stamped `receiptNumber = KS-<id>`
@@ -514,6 +519,94 @@ describe("payments API (real DB)", () => {
       expect(body.status).toBe("pending");
       expect(await appointmentStatus(appointmentId)).toBe("pending");
       script.poll = "pending";
+    });
+
+    // P5.T6 — timeout reconciliation: the provider itself timing a charge out
+    // (MoMo FAILED after the prompt expires / Orange EXPIRED maps to `failed`)
+    // must reconcile through the SAME funnel on read, and that first decision
+    // must then win over any late push-path delivery.
+    it("polling applies a FAILED outcome (provider timeout/expiry) and the booking stays pending", async () => {
+      const appointmentId = await bookAppointment();
+      const charge = await json<{ id: string }>(
+        await checkout({ appointmentId, provider: "orange_money", payerPhone: "+237690000000" }),
+      );
+      script.poll = "failed"; // e.g. Orange EXPIRED after the web-pay session times out
+      const res = await harness.app.request(`/v1/payments/${charge.id}`, {
+        headers: { cookie: payerCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await json<{ status: string }>(res);
+      expect(body.status).toBe("failed");
+      const row = await paymentRow(charge.id);
+      expect(row?.status).toBe("failed");
+      expect(await appointmentStatus(appointmentId)).toBe("pending");
+      script.poll = "pending";
+    });
+
+    it("the FIRST decision wins across paths: a late CONTRADICTORY webhook cannot resurrect a poll-timed-out charge", async () => {
+      const appointmentId = await bookAppointment();
+      const charge = await json<{ id: string }>(
+        await checkout({ appointmentId, provider: "momo", payerPhone: "+237690000000" }),
+      );
+      // The pull path reconciles the timed-out charge to `failed`.
+      script.poll = "failed";
+      const polled = await harness.app.request(`/v1/payments/${charge.id}`, {
+        headers: { cookie: payerCookie },
+      });
+      expect((await json<{ status: string }>(polled)).status).toBe("failed");
+      script.poll = "pending";
+
+      const afterPoll = await paymentRow(charge.id);
+      // The provider's late delivery of the SAME decision: 200, zero writes.
+      const lateSame = await webhookPost({
+        provider: "momo",
+        providerChargeId: charge.id,
+        status: "failed",
+      });
+      expect(lateSame.status).toBe(200);
+      // And a contradictory late `succeeded` must NOT confirm the booking —
+      // the terminal state was already reached on the poll path.
+      const lateContradictory = await webhookPost({
+        provider: "momo",
+        providerChargeId: charge.id,
+        status: "succeeded",
+      });
+      expect(lateContradictory.status).toBe(200);
+
+      const after = await paymentRow(charge.id);
+      expect(after?.status).toBe("failed");
+      expect(after?.updatedAt?.getTime()).toBe(afterPoll?.updatedAt?.getTime());
+      expect(await appointmentStatus(appointmentId)).toBe("pending");
+      const rows = await harness.db
+        .select()
+        .from(paymentTable)
+        .where(eq(paymentTable.appointmentId, appointmentId));
+      expect(rows).toHaveLength(1); // no charge was created by the late pushes
+    });
+
+    it("cross-path idempotency: a poll-decided SUCCESS then the provider's duplicate webhook changes nothing", async () => {
+      const appointmentId = await bookAppointment();
+      const charge = await json<{ id: string }>(
+        await checkout({ appointmentId, provider: "momo", payerPhone: "+237690000000" }),
+      );
+      script.poll = "succeeded";
+      const polled = await harness.app.request(`/v1/payments/${charge.id}`, {
+        headers: { cookie: payerCookie },
+      });
+      expect((await json<{ status: string }>(polled)).status).toBe("succeeded");
+      expect(await appointmentStatus(appointmentId)).toBe("confirmed");
+      script.poll = "pending";
+
+      const rowAfterPoll = await paymentRow(charge.id);
+      const duplicate = await webhookPost({
+        provider: "momo",
+        providerChargeId: charge.id,
+        status: "succeeded",
+      });
+      expect(duplicate.status).toBe(200);
+      const rowAfterWebhook = await paymentRow(charge.id);
+      expect(rowAfterWebhook?.updatedAt?.getTime()).toBe(rowAfterPoll?.updatedAt?.getTime());
+      expect(await appointmentStatus(appointmentId)).toBe("confirmed");
     });
   });
 
