@@ -8,7 +8,7 @@ import { consultationOffering } from "@/db/schema/consultation-offering";
 import { notificationOutbox } from "@/db/schema/notification-outbox";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
-import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
 // SAFETY: API tests call endpoints with known response contracts and immediately assert on those shapes.
 const json = <T>(res: Response): Promise<T> => res.json() as Promise<T>;
@@ -64,14 +64,26 @@ describe("appointments API (real DB)", () => {
 
   beforeAll(async () => {
     harness = await createTestHarness();
-    patientCookie = await harness.signUpAndVerify("booker@example.com", "password12345", "Book Er");
-    otherCookie = await harness.signUpAndVerify("other@example.com", "password12345", "Oth Er");
+    patientCookie = await harness.signUpAndVerify(
+      "booker@example.com",
+      testPassword("default"),
+      "Book Er",
+    );
+    otherCookie = await harness.signUpAndVerify(
+      "other@example.com",
+      testPassword("default"),
+      "Oth Er",
+    );
     patientUserId = await harness.userIdFor("booker@example.com");
 
     // The practitioner signs up through the real flow (a session cookie is
     // needed to read their agenda), then is granted the doctor role in place —
     // onboarding flows are the api tier's own tests.
-    doctorCookie = await harness.signUpAndVerify("doctor@example.com", "password12345", "Doc Tor");
+    doctorCookie = await harness.signUpAndVerify(
+      "doctor@example.com",
+      testPassword("default"),
+      "Doc Tor",
+    );
     await harness.db
       .update(user)
       .set({ role: "doctor" })
@@ -266,7 +278,7 @@ describe("appointments API (real DB)", () => {
       // A dedicated account with exactly 3 bookings makes the page math exact.
       const cookie = await harness.signUpAndVerify(
         "paginator@example.com",
-        "password12345",
+        testPassword("default"),
         "Pagina Tor",
       );
       const starts: string[] = [];
@@ -370,7 +382,7 @@ describe("appointments API (real DB)", () => {
       ).toBe(403);
 
       // A doctor role without a practitioner profile has no agenda to read.
-      await harness.signUpAndVerify("role-only@example.com", "password12345", "Role Only");
+      await harness.signUpAndVerify("role-only@example.com", testPassword("default"), "Role Only");
       await harness.db
         .update(user)
         .set({ role: "doctor" })
@@ -378,7 +390,7 @@ describe("appointments API (real DB)", () => {
       const roleOnlyCookie = await harness
         .post("/api/auth/sign-in/email", {
           email: "role-only@example.com",
-          password: "password12345",
+          password: testPassword("default"),
         })
         .then((r) => r.headers.get("set-cookie") ?? "");
       expect(

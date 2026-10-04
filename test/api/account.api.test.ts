@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { patientProfile } from "@/db/schema/patient-profile";
 import { user } from "@/db/schema/auth";
 import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { testPassword } from "../support/app-harness";
 
 // Account lifecycle via better-auth endpoints (wired with our emailOTP + hooks):
 // password reset, email change, and account deletion (+ our data cascade).
@@ -17,7 +18,7 @@ describe("account lifecycle (real DB)", () => {
 
   it("password reset: request OTP -> reset -> sign in with the new password", async () => {
     const email = "reset@example.com";
-    await harness.signUpAndVerify(email, "old-password-123", "Reset Me");
+    await harness.signUpAndVerify(email, testPassword("old"), "Reset Me");
 
     expect(
       (await harness.post("/api/auth/email-otp/request-password-reset", { email })).status,
@@ -25,17 +26,17 @@ describe("account lifecycle (real DB)", () => {
     const reset = await harness.post("/api/auth/email-otp/reset-password", {
       email,
       otp: harness.otpFor(email),
-      password: "new-password-456",
+      password: testPassword("new"),
     });
     expect(reset.status).toBe(200);
 
     // Old password no longer works; new password does.
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "old-password-123" }))
+      (await harness.post("/api/auth/sign-in/email", { email, password: testPassword("old") }))
         .status,
     ).not.toBe(200);
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "new-password-456" }))
+      (await harness.post("/api/auth/sign-in/email", { email, password: testPassword("new") }))
         .status,
     ).toBe(200);
   });
@@ -67,7 +68,7 @@ describe("account lifecycle (real DB)", () => {
 
   it("delete account: removes the user and cascades our profile rows", async () => {
     const email = "delete@example.com";
-    const password = "password12345";
+    const password = testPassword("delete-account");
     const cookie = await harness.signUpAndVerify(email, password, "Del Ete");
     await harness.post(
       "/v1/patients/me/profile",
@@ -100,11 +101,11 @@ describe("account lifecycle (real DB)", () => {
 
   it("change password: wrong current is rejected; correct rotates it and revokes other sessions", async () => {
     const email = "changepw@example.com";
-    const cookieA = await harness.signUpAndVerify(email, "old-password-123", "Change Pw");
+    const cookieA = await harness.signUpAndVerify(email, testPassword("old"), "Change Pw");
     // A second, concurrent session for the same user.
     const cookieB =
       (
-        await harness.post("/api/auth/sign-in/email", { email, password: "old-password-123" })
+        await harness.post("/api/auth/sign-in/email", { email, password: testPassword("old") })
       ).headers.get("set-cookie") ?? "";
     expect((await harness.app.request("/v1/me", { headers: { cookie: cookieB } })).status).toBe(
       200,
@@ -115,7 +116,7 @@ describe("account lifecycle (real DB)", () => {
       (
         await harness.post(
           "/api/auth/change-password",
-          { currentPassword: "not-the-password", newPassword: "brand-new-789" },
+          { currentPassword: testPassword("wrong-guess"), newPassword: testPassword("brand-new") },
           cookieA,
         )
       ).status,
@@ -128,8 +129,8 @@ describe("account lifecycle (real DB)", () => {
           await harness.post(
             "/api/auth/change-password",
             {
-              currentPassword: "old-password-123",
-              newPassword: "brand-new-789",
+              currentPassword: testPassword("old"),
+              newPassword: testPassword("brand-new"),
               revokeOtherSessions: true,
             },
             cookieA,
@@ -140,23 +141,28 @@ describe("account lifecycle (real DB)", () => {
 
     // Old password no longer signs in; the other session is dead; the new one works.
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "old-password-123" }))
+      (await harness.post("/api/auth/sign-in/email", { email, password: testPassword("old") }))
         .status,
     ).not.toBe(200);
     expect((await harness.app.request("/v1/me", { headers: { cookie: cookieB } })).status).toBe(
       401,
     );
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "brand-new-789" })).status,
+      (
+        await harness.post("/api/auth/sign-in/email", {
+          email,
+          password: testPassword("brand-new"),
+        })
+      ).status,
     ).toBe(200);
   });
 
   it("password reset revokes all other sessions", async () => {
     const email = "reset-revoke@example.com";
-    await harness.signUpAndVerify(email, "old-password-123", "Reset Revoke");
+    await harness.signUpAndVerify(email, testPassword("old"), "Reset Revoke");
     const staleCookie =
       (
-        await harness.post("/api/auth/sign-in/email", { email, password: "old-password-123" })
+        await harness.post("/api/auth/sign-in/email", { email, password: testPassword("old") })
       ).headers.get("set-cookie") ?? "";
     expect((await harness.app.request("/v1/me", { headers: { cookie: staleCookie } })).status).toBe(
       200,
@@ -170,7 +176,7 @@ describe("account lifecycle (real DB)", () => {
         await harness.post("/api/auth/email-otp/reset-password", {
           email,
           otp: harness.otpFor(email),
-          password: "new-password-456",
+          password: testPassword("new"),
         })
       ).status,
     ).toBe(200);

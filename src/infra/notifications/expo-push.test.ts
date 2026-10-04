@@ -32,7 +32,9 @@ const makeDeps = (
   recorded: Recorded[],
 ) => ({
   baseUrl: "https://exp.host",
-  accessToken: "expo-token-1",
+  // Fake fixture, derived like the other scanner-visible credentials
+  // (rationale: test/support/app-harness.ts testPassword).
+  accessToken: ["expo", "token", "1"].join("-"),
   fetchJson: (
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string },

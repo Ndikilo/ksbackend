@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verification } from "@/db/schema/auth";
-import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
 // Safety-critical OTP verification paths (better-auth emailOTP): expiry is
 // honored, and wrong attempts decrement a 3-try budget (the plugin default)
@@ -24,7 +24,7 @@ describe("OTP verification safety (real DB)", () => {
 
   it("rejects an expired OTP — the reset cannot go through with a stale code", async () => {
     const email = "otp-expired@example.com";
-    await harness.signUpAndVerify(email, "password12345", "Expi Red");
+    await harness.signUpAndVerify(email, testPassword("default"), "Expi Red");
     expect(await requestReset(email)).toBe(200);
     const otp = harness.otpFor(email);
 
@@ -38,7 +38,8 @@ describe("OTP verification safety (real DB)", () => {
     expect(stale.status).not.toBe(200);
     // The old password still signs in — nothing was reset.
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "password12345" })).status,
+      (await harness.post("/api/auth/sign-in/email", { email, password: testPassword("default") }))
+        .status,
     ).toBe(200);
 
     // A freshly requested code works.
@@ -48,7 +49,7 @@ describe("OTP verification safety (real DB)", () => {
 
   it("a single wrong attempt does not invalidate the code", async () => {
     const email = "otp-onewrong@example.com";
-    await harness.signUpAndVerify(email, "password12345", "One Wrong");
+    await harness.signUpAndVerify(email, testPassword("default"), "One Wrong");
     expect(await requestReset(email)).toBe(200);
     const otp = harness.otpFor(email);
 
@@ -58,7 +59,7 @@ describe("OTP verification safety (real DB)", () => {
 
   it("wrong OTP decrements attempts — the code is dead after 3 wrong tries", async () => {
     const email = "otp-attempts@example.com";
-    await harness.signUpAndVerify(email, "password12345", "Attem Pts");
+    await harness.signUpAndVerify(email, testPassword("default"), "Attem Pts");
     expect(await requestReset(email)).toBe(200);
     const otp = harness.otpFor(email);
 
@@ -73,7 +74,8 @@ describe("OTP verification safety (real DB)", () => {
     expect((await tryReset(email, otp, "new-password-456")).status).not.toBe(200);
     // ...the account is not compromised (old password still works)...
     expect(
-      (await harness.post("/api/auth/sign-in/email", { email, password: "password12345" })).status,
+      (await harness.post("/api/auth/sign-in/email", { email, password: testPassword("default") }))
+        .status,
     ).toBe(200);
     // ...and a freshly requested code restores a working reset flow.
     expect(await requestReset(email)).toBe(200);

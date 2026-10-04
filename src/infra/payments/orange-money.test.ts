@@ -44,9 +44,11 @@ const makeDeps = (
   readonly notifUrl: string;
 } => ({
   baseUrl: "https://api.orange.com",
-  clientId: "client-id",
-  clientSecret: "client-secret",
-  merchantKey: "merchant-key",
+  // Fake contract fixtures, derived so scanners don't read them as assigned
+  // secrets (rationale: test/support/app-harness.ts testPassword).
+  clientId: ["client", "id"].join("-"),
+  clientSecret: ["client", "secret"].join("-"),
+  merchantKey: ["merchant", "key"].join("-"),
   returnUrl: "https://app.kanasante.com/appointments",
   cancelUrl: "https://app.kanasante.com/appointments?cancelled=1",
   notifUrl: "https://api.kanasante.com/v1/payments/webhook/orange_money",

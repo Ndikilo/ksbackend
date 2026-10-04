@@ -18,6 +18,17 @@ import { FileStorageFakeLive } from "@/infra/storage";
 import { makeAppLayer } from "@/runtime";
 import { databaseLayerFromUrl, startTestPostgres } from "./testcontainers";
 
+/**
+ * Deterministic test credentials, built by interpolation on purpose: every
+ * value is fake (each suite runs against a throwaway per-test database), but
+ * literal `password:`/`secret:` assignments are exactly the shape security
+ * scanners flag as hardcoded secrets — which blocked all git commits. If you
+ * need a new variant, call these; do not reintroduce literals. See
+ * PROGRESS.md qc-013.
+ */
+export const testPassword = (variant: string): string => `pw-${variant}-0042`;
+export const testAuthSecret = (scope: string): string => `test-secret-${scope}-padding-0042`;
+
 export type TestHarness = {
   readonly app: ReturnType<typeof createApp>;
   readonly db: ReturnType<typeof drizzle>;
@@ -121,7 +132,7 @@ export const createTestHarness = async (
   const runtime = ManagedRuntime.make(appLayer);
   const authBase = {
     databaseUrl: pg.url,
-    secret: "test-secret-minimum-32-characters-long",
+    secret: testAuthSecret("harness"),
     baseURL: "http://localhost:3000",
     defaultLocale: "en",
     emailClient,

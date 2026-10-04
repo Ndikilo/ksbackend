@@ -6,7 +6,7 @@ import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
-import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
 // SAFETY: API tests call endpoints with known response contracts and immediately assert on those shapes.
 const json = <T>(res: Response): Promise<T> => res.json() as Promise<T>;
@@ -42,12 +42,12 @@ describe("practitioner booking policy (real DB)", () => {
     harness = await createTestHarness();
     doctorCookie = await harness.signUpAndVerify(
       "policy-doc@example.com",
-      "password12345",
+      testPassword("default"),
       "Doc Policy",
     );
     patientCookie = await harness.signUpAndVerify(
       "policy-patient@example.com",
-      "password12345",
+      testPassword("default"),
       "Pat Ient",
     );
     await harness.db
@@ -130,7 +130,11 @@ describe("practitioner booking policy (real DB)", () => {
     ).toBe(401);
 
     // Doctor role WITHOUT a profile → 404.
-    await harness.signUpAndVerify("policy-roleless@example.com", "password12345", "Role Less");
+    await harness.signUpAndVerify(
+      "policy-roleless@example.com",
+      testPassword("default"),
+      "Role Less",
+    );
     await harness.db
       .update(user)
       .set({ role: "doctor" })
@@ -138,7 +142,7 @@ describe("practitioner booking policy (real DB)", () => {
     const rolelessCookie = await harness
       .post("/api/auth/sign-in/email", {
         email: "policy-roleless@example.com",
-        password: "password12345",
+        password: testPassword("default"),
       })
       .then((r) => r.headers.get("set-cookie") ?? "");
     expect(

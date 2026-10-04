@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { user } from "@/db/schema/auth";
 import { caregiverLink } from "@/db/schema/caregiver-link";
 import { dependent } from "@/db/schema/dependent";
-import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
 // SAFETY: API tests call endpoints with known response contracts and immediately assert on those shapes.
 const json = <T>(res: Response): Promise<T> => res.json() as Promise<T>;
@@ -147,7 +147,7 @@ describe("dependents API (real DB)", () => {
   });
 
   it("deleting a caregiver's account removes solely-managed dependents but keeps shared ones", async () => {
-    const password = "password12345";
+    const password = testPassword("caregiver");
     const leaving = await harness.signUpAndVerify("leaving@example.com", password, "Lea Ving");
 
     const sole = await json<{ id: string }>(

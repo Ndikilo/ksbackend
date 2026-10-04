@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { profession } from "@/db/schema/profession";
 import { practitionerProfile } from "@/db/schema/practitioner-profile";
-import { createTestHarness, type TestHarness } from "../support/app-harness";
+import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
 // P0.T10: beforeDelete's S3 cleanup — deleting an account must remove the
 // practitioner's uploaded documents from the real bucket. Exercises the REAL
@@ -67,7 +67,7 @@ describe("account deletion S3 cleanup (integration)", () => {
   });
 
   it("deletes the practitioner's uploaded objects when the account is deleted", async () => {
-    const password = "password12345";
+    const password = testPassword("s3-delete");
     const email = "s3-delete@example.com";
     const cookie = await harness.signUpAndVerify(email, password, "S3 Delete");
     const userId = await harness.userIdFor(email);

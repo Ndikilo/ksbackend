@@ -1,4 +1,5 @@
 import { ManagedRuntime } from "effect";
+import { testAuthSecret } from "../support/app-harness";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppRuntime } from "@/http/app-env";
@@ -35,7 +36,7 @@ describe("OpenAPI route coverage", () => {
     runtime = ManagedRuntime.make(makeAppLayer(TestDatabaseLive, fakeInfra));
     auth = makeAuth({
       databaseUrl: "postgres://user:pass@localhost:5432/db",
-      secret: "test-secret-min-32-chars-0000000000",
+      secret: testAuthSecret("openapi"),
       baseURL: "http://localhost:3000",
       defaultLocale: "en",
       emailClient: makeConsoleClient(),

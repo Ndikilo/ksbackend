@@ -5,6 +5,7 @@ import { createApp } from "@/http/app";
 import { makeAuth } from "@/infra/auth";
 import { makeConsoleClient } from "@/infra/email";
 import { fakeInfra, makeAppLayer } from "@/runtime";
+import { testAuthSecret } from "../support/app-harness";
 import { TestDatabaseLive } from "../support/testcontainers";
 
 // Full-stack readiness: the real app layer (Health backed by a real Postgres via
@@ -18,7 +19,7 @@ describe("readyz (integration)", () => {
     runtime = ManagedRuntime.make(makeAppLayer(TestDatabaseLive, fakeInfra));
     auth = makeAuth({
       databaseUrl: "postgres://user:pass@localhost:5432/db",
-      secret: "test-secret-min-32-chars-0000000000",
+      secret: testAuthSecret("health"),
       baseURL: "http://localhost:3000",
       defaultLocale: "fr",
       emailClient: makeConsoleClient(),
