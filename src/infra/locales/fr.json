@@ -55,5 +55,11 @@
   "emails.receipt.provider": "Moyen de paiement",
   "emails.receipt.paidAt": "Payé le",
   "emails.receipt.reference": "Référence",
-  "emails.receipt.closing": "Conservez ce reçu pour rapprocher le débit de votre relevé mobile money."
+  "emails.receipt.closing": "Conservez ce reçu pour rapprocher le débit de votre relevé mobile money.",
+  "emails.reminder24h.subject": "Rappel — rendez-vous le {when}",
+  "emails.reminder24h.heading": "Votre rendez-vous est demain",
+  "emails.reminder24h.body": "Nous vous rappelons que votre rendez-vous avec {practitioner} est prévu le {when} (heure de Douala). Si vous ne pouvez plus venir, merci de l'annuler dans l'application afin de libérer le créneau.",
+  "emails.reminder1h.subject": "Votre rendez-vous commence à {when}",
+  "emails.reminder1h.heading": "Votre rendez-vous commence bientôt",
+  "emails.reminder1h.body": "Votre rendez-vous avec {practitioner} commence à {when} (heure de Douala). Merci de vous tenir prêt quelques minutes à l'avance."
 }

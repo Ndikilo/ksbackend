@@ -36,12 +36,24 @@ export type EnqueueInput = {
   readonly payload: OutboxPayload;
   /** Schedule for later (reminders) — defaults to immediately due. */
   readonly availableAt?: Date;
+  /**
+   * Idempotency guard (P6.T2): when the key already exists the enqueue is a
+   * database-level no-op and `enqueue` resolves to `undefined` — two racing
+   * producers (e.g. concurrent scheduler scans) yield exactly one row.
+   */
+  readonly dedupKey?: string;
 };
 
 export interface OutboxServiceService {
-  /** Durable enqueue: INSERT a `pending` row, due immediately (or at the
-   *  requested time). The user's action never waits on a provider. */
-  readonly enqueue: (input: EnqueueInput) => Effect.Effect<OutboxNotification, SqlError.SqlError>;
+  /**
+   * Durable enqueue: INSERT a `pending` row, due immediately (or at the
+   *  requested time). The user's action never waits on a provider. With a
+   * `dedupKey` that already exists this resolves to `undefined` (skipped
+   * duplicate) instead of the row.
+   */
+  readonly enqueue: (
+    input: EnqueueInput,
+  ) => Effect.Effect<OutboxNotification | undefined, SqlError.SqlError>;
   /**
    * One drain pass: claim due rows (pending+due, plus stale `sending` from a
    * crashed claim), send each through its channel, record the outcome.
@@ -94,8 +106,9 @@ export const OutboxServiceLive = Layer.effect(
           status: "pending",
           attempts: 0,
           availableAt: at,
-          createdAt: yield* now,
-          updatedAt: yield* now,
+          createdAt: at,
+          updatedAt: at,
+          dedupKey: input.dedupKey ?? null,
         });
       });
 

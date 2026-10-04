@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
 import { notificationCategoryEnum, notificationChannelEnum, outboxStatusEnum } from "./enums";
@@ -38,6 +48,13 @@ export const notificationOutbox = pgTable(
     lastError: text("last_error"),
     // Provider handle after an accepted send (Resend id / Expo ticket / SMS sid).
     providerMessageId: text("provider_message_id"),
+    // Producer-minted idempotency guard (P6.T2): `reminder-24h:<appointmentId>`
+    // and friends. Two racing scheduler scans INSERT the same key; the UNIQUE
+    // index + ON CONFLICT DO NOTHING keep exactly one row — double-enqueue is
+    // impossible at the database level (same discipline as payment.idempotency
+    // _key). NULL (ad-hoc sends) never conflicts: Postgres treats NULLs as
+    // distinct in unique indexes.
+    dedupKey: text("dedup_key"),
     // Earliest reclaim time (backoff after failure / scheduled send).
     availableAt: timestamp("available_at", { withTimezone: true, mode: "date" }).notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true, mode: "date" }),
@@ -48,6 +65,9 @@ export const notificationOutbox = pgTable(
     index("notification_outbox_user_id_idx").on(t.userId),
     // The drain query: due work first, oldest available first.
     index("notification_outbox_drain_idx").on(t.status, t.availableAt),
+    // Idempotent enqueue: one row per dedup key, ever (P6.T2). Plain UNIQUE —
+    // the many-NULL rows never participate (NULLs are distinct in Postgres).
+    uniqueIndex("notification_outbox_dedup_key_unique").on(t.dedupKey),
     check("notification_outbox_attempts_non_negative", sql`${t.attempts} >= 0`),
     // `sent` ⟺ a sent timestamp exists (same pin discipline as payment.refunded).
     check(

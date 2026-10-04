@@ -71,6 +71,47 @@ In the `ksfrontend` repo, set `expo.extra.apiBaseUrl` in `app.json` to
 users keep the automatic `10.0.2.2` rewrite only for local URLs — a public URL
 is used as-is.
 
+## Notifications worker (reminders + outbox drain)
+
+The blueprint also provisions **ksbackend-notifications**, a Render **cron job**
+that runs `scripts/notifications-worker.ts` **every 5 minutes** (schedule is
+UTC, like all Render cron expressions). One pass:
+
+1. **Scan** — confirmed appointments starting within the next 24 h enter their
+   reminder windows (24 h and 1 h before the appointment, Africa/Douala
+   discipline: the reminder instant is exact lead-time arithmetic in absolute
+   time, and the copy renders the appointment clock in Douala).
+2. **Enqueue** — one notification per (appointment, horizon) into the
+   `notification_outbox` table, keyed `reminder-24h:<appointmentId>` /
+   `reminder-1h:<appointmentId>`. The key has a UNIQUE index: even if two
+   passes ever overlap, exactly one row survives (double-send impossible).
+   Appointments cancelled before their reminder point are skipped, bookings
+   made inside a horizon's window skip that horizon (the booking confirmation
+   covered it), and each user's stored notification preferences
+   (`appointments` category) gate the channels.
+3. **Drain** — due outbox rows are claimed (`FOR UPDATE SKIP LOCKED`) and
+   delivered through the channel registry (Resend email; Expo push and SMS
+   fail per call with `not_configured` until their credentials exist). Failed
+   sends stay in the outbox with a backoff and remain visible.
+
+Operational notes:
+
+- Render runs **at most one instance** of a cron job at a time; the DB-level
+  dedup above is the belt-and-braces guarantee (manual triggers, future
+  multi-instance setups).
+- The job shares the web service's image and database; **no extra secrets**.
+  Reminder emails are actually sent only once `RESEND_API_KEY` is configured
+  (see the section above) — without it sends log instead of sending.
+- Migrations are applied by the **web service** on every deploy/start; the
+  cron job never migrates. If you ever enable the cron before the first web
+  boot, its passes fail visibly (exit 1) until migrations land — the next
+  tick heals.
+- Change the cadence in `render.yaml` (`schedule`), e.g. `"*/1 * * * *"` for
+  tighter reminder latency; Render bills cron jobs per run second.
+- Verify a pass from the dashboard (**Trigger Run**) — the log line prints
+  `scan=<n> enqueued=<n> duplicates=<n> skipped=<n> drain(claimed=… sent=…)`.
+  `duplicates > 0` means an earlier pass already enqueued those reminders.
+
 ## Hardening to production (when ready)
 
 - `APP_ENV=prod` + real values for: `BETTER_AUTH_SECRET`, `DATABASE_URL`,

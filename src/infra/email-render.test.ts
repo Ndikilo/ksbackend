@@ -72,3 +72,57 @@ describe("renderEmail (receipt)", () => {
     expect(en.subject).not.toBe(fr.subject);
   });
 });
+
+describe("renderEmail (reminder, P6.T2)", () => {
+  // 2026-03-30T09:00Z = 10:00 in Africa/Douala (fixed +1, no DST).
+  const WHEN: Date = (() => {
+    const at = new Date(0);
+    at.setUTCFullYear(2026, 2, 30);
+    at.setUTCHours(9, 0, 0, 0);
+    return at;
+  })();
+  const scenario = (horizon: "24h" | "1h") =>
+    ({ kind: "reminder", horizon, when: WHEN, practitionerName: "Dr Ngo Bell" }) as const;
+
+  /** The Douala-local rendering the email must carry (clinic clock discipline). */
+  const expectedWhen = (locale: "en" | "fr"): string =>
+    new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Africa/Douala",
+    }).format(WHEN);
+
+  it("renders the 24h reminder en and fr — clinic-local time, practitioner named", () => {
+    const en = renderEmail(scenario("24h"), "en");
+    expect(en.subject).toBe(`Reminder — appointment at ${expectedWhen("en")}`);
+    expect(en.html).toContain("Dr Ngo Bell");
+    expect(en.html).toContain(expectedWhen("en"));
+    expect(en.html).toContain("10:00"); // 09:00Z on the Douala wall clock
+    expect(en.html).toContain("KanaSanté — connecting you to trusted care.");
+
+    const fr = renderEmail(scenario("24h"), "fr");
+    expect(fr.subject).toBe(`Rappel — rendez-vous le ${expectedWhen("fr")}`);
+    expect(fr.html).toContain("Nous vous rappelons");
+    expect(fr.html).not.toContain("We");
+  });
+
+  it("the 1h horizon has its own honest copy (the appointment is imminent)", () => {
+    const en = renderEmail(scenario("1h"), "en");
+    expect(en.html).toContain("starting soon");
+    expect(en.html).not.toContain("tomorrow");
+
+    const fr = renderEmail(scenario("1h"), "fr");
+    expect(fr.html).toContain("commence bientôt");
+    expect(fr.subject).not.toBe(renderEmail(scenario("24h"), "fr").subject);
+  });
+
+  it("no raw template key or unreplaced param can ever ship", () => {
+    for (const locale of ["en", "fr"] as const) {
+      for (const horizon of ["24h", "1h"] as const) {
+        const email = renderEmail(scenario(horizon), locale);
+        expect(email.subject).not.toMatch(/emails\.|\{when\}|\{practitioner\}/);
+        expect(email.html).not.toMatch(/emails\.|\{when\}|\{practitioner\}/);
+      }
+    }
+  });
+});

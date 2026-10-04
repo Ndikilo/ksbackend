@@ -75,21 +75,27 @@ describe("notification outbox (real DB)", () => {
     sms: sender("sms"),
   });
 
+  // These tests never pass a dedupKey, so enqueue always yields a row — the
+  // new `undefined` (deduplicated) outcome is guarded out of the type (P6.T2).
   const enqueueRow = (overrides?: Partial<Parameters<Service["enqueue"]>[0]>) =>
-    service.enqueue({
-      userId: "user-outbox-1",
-      channel: "email",
-      category: "appointments",
-      scenario: "booking_confirmation",
-      locale: "en",
-      recipient: "patient@example.com",
-      payload: {
-        title: "Appointment confirmed",
-        bodyText: "Tomorrow at 09:00.",
-        bodyHtml: "<p>Tomorrow at 09:00.</p>",
-      },
-      ...overrides,
-    });
+    Effect.flatMap(
+      service.enqueue({
+        userId: "user-outbox-1",
+        channel: "email",
+        category: "appointments",
+        scenario: "booking_confirmation",
+        locale: "en",
+        recipient: "patient@example.com",
+        payload: {
+          title: "Appointment confirmed",
+          bodyText: "Tomorrow at 09:00.",
+          bodyHtml: "<p>Tomorrow at 09:00.</p>",
+        },
+        ...overrides,
+      }),
+      (row) =>
+        row === undefined ? Effect.die("unexpected enqueue duplicate") : Effect.succeed(row),
+    );
 
   /** Force a row's clock (backoff expiry / stall simulation) from the test. */
   const setRow = async (

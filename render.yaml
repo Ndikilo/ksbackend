@@ -1,8 +1,13 @@
 # Render blueprint — one-click test deployment of the KanaSanté API.
 #
 # Provisions:
-#   - ksbackend-api : this Dockerfile as a free web service (spins down when idle)
-#   - ksbackend-db  : a free Render Postgres (auto-wipes after 30 days on free)
+#   - ksbackend-api            : this Dockerfile as a free web service (spins
+#                                down when idle)
+#   - ksbackend-notifications  : cron job (every 5 min, UTC) running the
+#                                notifications worker — appointment reminders
+#                                (24h/1h) + outbox drain (P6.T2)
+#   - ksbackend-db             : a free Render Postgres (auto-wipes after 30
+#                                days on free)
 #
 # APP_ENV=staging: same real drivers as prod (Nominatim geocoder, S3 scanner,
 # better-auth rate limits) but without the hard prod requirements (real S3
@@ -11,8 +16,12 @@
 # Move to APP_ENV=prod only once real values for S3 / RESEND / the DATA_*_KEY
 # pairs are in place.
 #
-# Migrations run automatically on every deploy/start (scripts/start.sh:
-# a drizzle-orm migrator that needs no dev dependencies, then the server).
+# Migrations run automatically on every deploy/start of the WEB service
+# (scripts/start.sh: a drizzle-orm migrator that needs no dev dependencies,
+# then the server). The cron job shares the image and database and always runs
+# AFTER a web deploy has migrated (Render builds both services from the same
+# commit; the worker tolerates running before the web service's first boot by
+# failing visibly — the next tick heals once migrations are in).
 
 services:
   - type: web
@@ -40,6 +49,27 @@ services:
       # Optional, add later in the dashboard to enable OTP emails:
       #   RESEND_API_KEY  (free tier at resend.com; while using Resend's sandbox
       #   sender also set EMAIL_FROM to `KanaSanté <onboarding@resend.dev>`)
+
+  # Reminder scheduler + outbox drain (P6.T2). Cron expressions are UTC on
+  # Render; the reminder math itself is absolute time, so the 5-minute
+  # granularity bounds lateness, never shifts the wall clock. Render runs at
+  # most ONE instance per tick (a new tick waits for the running one) — and
+  # the outbox dedup key makes double-enqueue impossible even if that ever
+  # changes. The same RESEND_API_KEY env (added in the dashboard) drives the
+  # actual reminder emails; without it sends log instead of sending.
+  - type: cron
+    name: ksbackend-notifications
+    runtime: docker
+    plan: free
+    schedule: "*/5 * * * *"
+    dockerCommand: bunx varlock run -- bun run scripts/notifications-worker.ts
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ksbackend-db
+          property: connectionString
 
 databases:
   - name: ksbackend-db

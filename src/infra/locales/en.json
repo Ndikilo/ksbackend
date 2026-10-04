@@ -55,5 +55,11 @@
   "emails.receipt.provider": "Payment method",
   "emails.receipt.paidAt": "Paid on",
   "emails.receipt.reference": "Reference",
-  "emails.receipt.closing": "Keep this receipt to reconcile the charge with your mobile-money statement."
+  "emails.receipt.closing": "Keep this receipt to reconcile the charge with your mobile-money statement.",
+  "emails.reminder24h.subject": "Reminder — appointment at {when}",
+  "emails.reminder24h.heading": "Your appointment is tomorrow",
+  "emails.reminder24h.body": "This is a reminder that your appointment with {practitioner} is scheduled for {when} (Douala time). If you can no longer attend, please cancel in the app so the slot can go to someone else.",
+  "emails.reminder1h.subject": "Your appointment starts at {when}",
+  "emails.reminder1h.heading": "Your appointment is starting soon",
+  "emails.reminder1h.body": "Your appointment with {practitioner} starts at {when} (Douala time). Please make sure you are ready a few minutes ahead."
 }

@@ -36,10 +36,15 @@ const toDomain = (r: Row): OutboxNotification => ({
 });
 
 export interface OutboxRepoService {
-  /** Insert a pending notification (the outbox pattern's write path). */
+  /**
+   * Insert a pending notification (the outbox pattern's write path). When the
+   * row carries a `dedupKey` that already exists, the insert is a no-op and
+   * `undefined` is returned — double-enqueue is impossible at the database
+   * level (UNIQUE index + ON CONFLICT DO NOTHING, P6.T2).
+   */
   readonly insert: (
     row: typeof notificationOutbox.$inferInsert,
-  ) => Effect.Effect<OutboxNotification, SqlError.SqlError>;
+  ) => Effect.Effect<OutboxNotification | undefined, SqlError.SqlError>;
   /**
    * Claim due work for one drain pass, in the caller's transaction:
    * rows that are `pending` and due (availableAt ≤ now), plus `sending` rows
@@ -90,14 +95,11 @@ export const OutboxRepoLive = Layer.effect(
         db
           .insert(notificationOutbox)
           .values(row)
+          // Idempotent enqueue (P6.T2): a repeated dedup key resolves to the
+          // EXISTING row — the insert contributes nothing and returns no row.
+          .onConflictDoNothing({ target: notificationOutbox.dedupKey })
           .returning()
-          .pipe(
-            Effect.flatMap((rows) =>
-              rows[0]
-                ? Effect.succeed(toDomain(rows[0]))
-                : Effect.dieMessage("Outbox insert returned no row."),
-            ),
-          ),
+          .pipe(Effect.map((rows) => (rows[0] ? toDomain(rows[0]) : undefined))),
 
       claimDue: ({ limit, now, stallBefore }) =>
         // Runs inside the CALLER's transaction (the service wraps this in

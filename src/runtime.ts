@@ -51,6 +51,8 @@ import { PractitionerRepoLive } from "./modules/practitioner/practitioner.repo";
 import { PractitionerServiceLive } from "./modules/practitioner/practitioner.service";
 import { PractitionerSearchRepoLive } from "./modules/practitioner/search/search.repo";
 import { PractitionerSearchServiceLive } from "./modules/practitioner/search/search.service";
+import { ReminderRepoLive } from "./modules/reminder/reminder.repo";
+import { ReminderSchedulerLive } from "./modules/reminder/reminder.service";
 
 /** Swappable external infra. Real drivers when serving; fakes only under test. */
 export type InfraLayers = {
@@ -215,6 +217,13 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
   const outbox = OutboxServiceLive.pipe(
     Layer.provide(Layer.mergeAll(outboxRepo, infra.channels, idGen, database)),
   );
+  // The reminder scheduler (P6.T2): scans confirmed appointments entering
+  // their 24h/1h windows and enqueues through the outbox (dedup-keyed), then
+  // drains — driven by scripts/notifications-worker.ts (Render cron).
+  const reminderRepo = ReminderRepoLive.pipe(Layer.provide(database));
+  const reminderScheduler = ReminderSchedulerLive.pipe(
+    Layer.provide(Layer.mergeAll(reminderRepo, outbox)),
+  );
 
   return Layer.mergeAll(
     profile,
@@ -237,6 +246,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     appointment,
     payment,
     outbox,
+    reminderScheduler,
     RateLimiterInMemoryLive,
     LoggerLive,
   );

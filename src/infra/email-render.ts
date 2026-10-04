@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as Handlebars from "handlebars";
+
+import type { ReminderHorizon } from "@/domain/reminder/reminder";
 import { type Locale, translate } from "./i18n";
 
 // Templates (HTML structure) live as .hbs files; the localized COPY lives in the
@@ -33,14 +35,19 @@ const PROVIDER_LABEL = {
   orange_money: "Orange Money",
 } satisfies Record<ReceiptEmailData["provider"], string>;
 
-/** Clinic-local receipt timestamps: the consultation happens in Cameroon. */
-const RECEIPT_TIME_ZONE = "Africa/Douala";
+/** Clinic-local timestamps: the consultation happens in Cameroon (fixed +1). */
+export const CLINIC_TIME_ZONE = "Africa/Douala";
 
-const formatPaidAt = (locale: Locale, at: Date): string =>
+/**
+ * Every user-facing timestamp renders in the CLINIC timezone — never the
+ * server's (P4.T1 discipline: a diaspora user and a Douala clinic must agree
+ * on "10:00"). Locale picks the regional formatting, not the zone.
+ */
+export const formatClinicInstant = (locale: Locale, at: Date): string =>
   new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: RECEIPT_TIME_ZONE,
+    timeZone: CLINIC_TIME_ZONE,
   }).format(at);
 
 export type EmailScenario =
@@ -49,7 +56,14 @@ export type EmailScenario =
   | { readonly kind: "verification-approved" }
   | { readonly kind: "verification-rejected"; readonly reason: string }
   | { readonly kind: "caregiver-invitation"; readonly token: string }
-  | { readonly kind: "receipt"; readonly receipt: ReceiptEmailData };
+  | { readonly kind: "receipt"; readonly receipt: ReceiptEmailData }
+  | {
+      readonly kind: "reminder";
+      readonly horizon: ReminderHorizon;
+      /** The appointment start — rendered clinic-local, never server-local. */
+      readonly when: Date;
+      readonly practitionerName: string;
+    };
 
 export type RenderedEmail = { readonly subject: string; readonly html: string };
 
@@ -105,12 +119,21 @@ export const renderEmail = (scenario: EmailScenario, locale: Locale): RenderedEm
           // Integer XAF, no floats (P5.T6) — the grouping-free canonical form.
           { label: t("emails.receipt.amount"), value: `${receipt.amountXaf} XAF` },
           { label: t("emails.receipt.provider"), value: PROVIDER_LABEL[receipt.provider] },
-          { label: t("emails.receipt.paidAt"), value: formatPaidAt(locale, receipt.paidAt) },
+          { label: t("emails.receipt.paidAt"), value: formatClinicInstant(locale, receipt.paidAt) },
           { label: t("emails.receipt.reference"), value: receipt.reference },
         ],
         closing: t("emails.receipt.closing"),
       });
       return wrap(t("emails.receipt.subject", { receiptNumber: receipt.receiptNumber }), body);
+    }
+    case "reminder": {
+      const ns = scenario.horizon === "24h" ? "emails.reminder24h" : "emails.reminder1h";
+      const when = formatClinicInstant(locale, scenario.when);
+      const body = noticeTemplate({
+        heading: t(`${ns}.heading`),
+        message: t(`${ns}.body`, { when, practitioner: scenario.practitionerName }),
+      });
+      return wrap(t(`${ns}.subject`, { when }), body);
     }
   }
 };
