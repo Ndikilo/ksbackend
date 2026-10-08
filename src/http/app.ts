@@ -21,6 +21,7 @@ import { registerPatientRoutes } from "@/modules/patient/patient.routes";
 import { registerPatientSearchRoutes } from "@/modules/patient/search/search.routes";
 import { registerOfferingRoutes } from "@/modules/offering/offering.routes";
 import { registerPaymentRoutes } from "@/modules/payment/payment.routes";
+import { registerPhoneRoutes } from "@/modules/phone/phone.routes";
 import { registerPayoutRoutes } from "@/modules/payout/payout.routes";
 import { registerPractitionerRoutes } from "@/modules/practitioner/practitioner.routes";
 import { registerPractitionerSearchRoutes } from "@/modules/practitioner/search/search.routes";
@@ -167,6 +168,7 @@ export const createApp = (
   });
 
   registerMeRoute(app, runtime);
+  registerPhoneRoutes(app, runtime);
   registerProfileRoutes(app, runtime);
   registerNotificationRoutes(app, runtime);
   registerAppointmentRoutes(app, runtime);
@@ -216,6 +218,15 @@ export const createApp = (
         "**Any user onboarding** — `POST /api/auth/sign-up/email` → verify the emailed OTP →",
         "`POST /api/auth/sign-in/email`. Then `GET /v1/me` for identity + roles.",
         "",
+        "**Phone signup (OTP)** — `POST /v1/auth/phone/start` with `{ phone, email, name, password }`",
+        "sends a 6-digit code (SMS, falling back to email when SMS is unconfigured; in sandbox/dev",
+        "with no channel configured the code comes back as `devCode`). Then",
+        "`POST /v1/auth/phone/verify` with `{ phone, code }` creates the account — follow the",
+        "returned `nextStep` (`verify-email`: request the email OTP via",
+        "`POST /api/auth/email-otp/send-verification-otp`, confirm via",
+        "`POST /api/auth/email-otp/verify-email`) and sign in with `POST /api/auth/sign-in/email`.",
+        "A signed-in user can instead attach a phone with just `{ phone }`.",
+        "",
         "**Patient / caregiver** — complete identity via `POST /v1/patients/me/profile` (this also",
         "grants the `patient` role and stores the emergency contact). Manage care recipients under",
         "**Dependents** below. Any user can also self-serve the role with `POST /v1/me/roles/patient`.",
@@ -254,6 +265,11 @@ export const createApp = (
     },
     tags: [
       { name: "Account", description: "Identity and roles for the signed-in user." },
+      {
+        name: "Auth",
+        description:
+          "Phone-number registration via OTP (P8.T6): request a 6-digit code for a phone (SMS, with email fallback when SMS is unconfigured), then verify it. Verify creates the account on the signup path or attaches the phone to the signed-in user. better-auth's own endpoints (sign-up/sign-in/email OTP) live under `/api/auth/*` and are documented separately.",
+      },
       {
         name: "Profile",
         description:

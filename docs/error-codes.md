@@ -30,6 +30,14 @@ from domain tagged error → `(status, code)` lives in one place: `src/http/erro
 | `PAYMENT_DECLINED`             | 402  | `PaymentDeclined`                | The wallet/provider refused the charge — retry or switch rail            |
 | `PAYMENT_PROVIDER_UNAVAILABLE` | 503  | `PaymentProviderUnavailable`     | Provider unreachable/misconfigured — nothing charged, retry later        |
 | `WEBHOOK_SIGNATURE_INVALID`    | 401  | `WebhookSignatureInvalid`        | Webhook HMAC missing/malformed/mismatching — payload never processed     |
+| `OTP_INVALID`                  | 401  | `OtpInvalid`                     | Wrong phone-OTP code (`details` carries the remaining attempts)          |
+| `OTP_EXPIRED`                  | 409  | `OtpExpired`                     | No live phone-OTP code for this phone, or its TTL elapsed                |
+| `OTP_ALREADY_USED`             | 409  | `OtpAlreadyUsed`                 | The phone-OTP code was already consumed — codes are single-use           |
+| `OTP_LOCKED`                   | 429  | `OtpLocked`                      | Phone locked after too many wrong codes (`details` carries the wait)     |
+| `OTP_RESEND_COOLDOWN`          | 429  | `OtpResendTooSoon`               | A code was sent too recently — wait for the 60s cooldown                 |
+| `OTP_SEND_THROTTLED`           | 429  | `OtpSendThrottled`               | Per-phone or per-IP OTP send budget spent for the window                 |
+| `OTP_DELIVERY_UNAVAILABLE`     | 503  | `OtpDeliveryUnavailable`         | No OTP channel configured (prod/staging) or the provider failed          |
+| `PHONE_ALREADY_VERIFIED`       | 409  | `PhoneAlreadyVerified`           | The phone is already a verified identity of another account              |
 | `PAYLOAD_TOO_LARGE`            | 413  | _(bodyLimit middleware)_         | Request body exceeds the 1 MB limit                                      |
 | `RATE_LIMITED`                 | 429  | _(rate-limit middleware)_        | Too many requests (`Retry-After` header carries the wait in seconds)     |
 | `INTERNAL`                     | 500  | _(any unhandled failure/defect)_ | Unexpected server error (cause logged with `requestId`)                  |

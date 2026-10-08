@@ -15,6 +15,16 @@ import {
 } from "@/domain/payment/errors";
 import { ReviewNotEligible } from "@/domain/review/errors";
 import {
+  OtpAlreadyUsed,
+  OtpDeliveryUnavailable,
+  OtpExpired,
+  OtpInvalid,
+  OtpLocked,
+  OtpResendTooSoon,
+  OtpSendThrottled,
+  PhoneAlreadyVerified,
+} from "@/domain/phone/errors";
+import {
   Conflict,
   FileInfected,
   FileScanIncomplete,
@@ -132,6 +142,55 @@ export const causeToError = (cause: Cause.Cause<unknown>): MappedError => {
       // Fail-closed webhook auth: missing/malformed/mismatching HMAC — the
       // payload was never processed (P5.T3).
       return { status: 401, code: "WEBHOOK_SIGNATURE_INVALID", params: {}, details: [] };
+    }
+    if (error instanceof OtpSendThrottled) {
+      // The per-phone or per-IP send budget is spent (P8.T6) — the wait comes
+      // back in details for the client to render a countdown.
+      return {
+        status: 429,
+        code: "OTP_SEND_THROTTLED",
+        params: {},
+        details: [{ scope: error.scope, retryAfterSeconds: error.retryAfterSeconds }],
+      };
+    }
+    if (error instanceof OtpResendTooSoon) {
+      return {
+        status: 429,
+        code: "OTP_RESEND_COOLDOWN",
+        params: {},
+        details: [{ retryAfterSeconds: error.retryAfterSeconds }],
+      };
+    }
+    if (error instanceof OtpLocked) {
+      return {
+        status: 429,
+        code: "OTP_LOCKED",
+        params: {},
+        details: [{ retryAfterSeconds: error.retryAfterSeconds }],
+      };
+    }
+    if (error instanceof OtpInvalid) {
+      return {
+        status: 401,
+        code: "OTP_INVALID",
+        params: {},
+        details: [{ remainingAttempts: error.remainingAttempts }],
+      };
+    }
+    if (error instanceof OtpExpired) {
+      return { status: 409, code: "OTP_EXPIRED", params: {}, details: [] };
+    }
+    if (error instanceof OtpAlreadyUsed) {
+      return { status: 409, code: "OTP_ALREADY_USED", params: {}, details: [] };
+    }
+    if (error instanceof PhoneAlreadyVerified) {
+      return { status: 409, code: "PHONE_ALREADY_VERIFIED", params: {}, details: [] };
+    }
+    if (error instanceof OtpDeliveryUnavailable) {
+      // No channel could take the OTP: everything unconfigured (a staging/prod
+      // deployment missing its Twilio/Resend setup) or the configured provider
+      // failed its transport. Retryable once credentials/provider recover.
+      return { status: 503, code: "OTP_DELIVERY_UNAVAILABLE", params: {}, details: [] };
     }
     if (error instanceof ValidationFailed) {
       return { status: 422, code: "VALIDATION_FAILED", params: {}, details: error.issues };

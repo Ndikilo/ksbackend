@@ -39,6 +39,9 @@ import { PatientSearchRepoLive } from "./modules/patient/search/search.repo";
 import { PatientSearchServiceLive } from "./modules/patient/search/search.service";
 import { PaymentRepoLive } from "./modules/payment/payment.repo";
 import { PaymentServiceLive } from "./modules/payment/payment.service";
+import { PhoneRepoLive } from "./modules/phone/phone.repo";
+import { OtpThrottleLive } from "./modules/phone/phone.policy";
+import { PhoneServiceLive } from "./modules/phone/phone.service";
 import { ProfileRepoLive } from "./modules/profile/profile.repo";
 import { ProfileServiceLive } from "./modules/profile/profile.service";
 import { PayoutRepoLive } from "./modules/payout/payout.repo";
@@ -248,6 +251,16 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     Layer.provide(Layer.mergeAll(reminderRepo, outbox)),
   );
 
+  // Phone identity + OTP (P8.T6): signup/attach verification whose delivery
+  // rides the SAME channel registry as every other notification (SMS first,
+  // email fallback), throttled per phone/IP by the OTP policy.
+  const phoneRepo = PhoneRepoLive.pipe(Layer.provide(database));
+  const phone = PhoneServiceLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(phoneRepo, idGen, crypto, infra.channels, OtpThrottleLive, database),
+    ),
+  );
+
   return Layer.mergeAll(
     profile,
     notification,
@@ -268,6 +281,7 @@ export const makeAppLayer = (database: typeof DatabaseLive, infra: InfraLayers) 
     health,
     appointment,
     payment,
+    phone,
     outbox,
     reminderScheduler,
     RateLimiterInMemoryLive,

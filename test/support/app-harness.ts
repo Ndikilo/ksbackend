@@ -49,6 +49,9 @@ type HarnessConfig = {
   readonly RATE_LIMIT_WINDOW_SECONDS?: string;
   readonly PLATFORM_COMMISSION_BPS?: string;
   readonly PAYMENT_WEBHOOK_SECRET?: string;
+  readonly APP_ENV?: string;
+  readonly PHONE_OTP_SEND_MAX?: string;
+  readonly PHONE_OTP_IP_SEND_MAX?: string;
 };
 
 // A scan-aware fake: file keys containing a status marker report that status

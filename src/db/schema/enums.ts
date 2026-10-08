@@ -111,3 +111,15 @@ export const outboxStatusEnum = pgEnum("outbox_status", [
   "failed",
   "dead",
 ]);
+
+/** Why a phone OTP registration exists (P8.T6): a new account signing up with
+ *  a phone number, or a signed-in user attaching/changing theirs. */
+export const phoneRegistrationPurposeEnum = pgEnum("phone_registration_purpose", [
+  "signup",
+  "attach",
+]);
+
+/** The channel that actually carried an OTP (P8.T6). `dev` = surfaced in the
+ *  API response in sandbox/dev mode when no channel is configured — never
+ *  allowed in prod/staging (see src/domain/phone/phone.ts). */
+export const phoneOtpChannelEnum = pgEnum("phone_otp_channel", ["sms", "email", "dev"]);
