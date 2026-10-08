@@ -132,11 +132,13 @@ export interface AppointmentRepoService {
   ) => Effect.Effect<Appointment, SqlError.SqlError>;
   /**
    * Confirm a PENDING appointment (P5.T3) — the ONLY write that produces
-   * `confirmed`, and the checkout service calls it exclusively inside the same
-   * transaction that flips the charge to `succeeded`: the booking cannot
-   * confirm without a succeeded payment. Guarded on `status = 'pending'` (a
-   * meanwhile-cancelled booking is never resurrected; the money is then held
-   * for the refund flow). Returns undefined when the guard excluded the row.
+   * `confirmed`. Two callers, one guarded write: the checkout service calls it
+   * inside the transaction that flips the charge to `succeeded` (the booking
+   * cannot confirm without a succeeded payment), and the practitioner-driven
+   * confirm of P7.T3 calls it under the appointment's row lock after the pure
+   * `judgeConfirm` gate. Guarded on `status = 'pending'` (a meanwhile-cancelled
+   * booking is never resurrected; the money is then held for the refund flow).
+   * Returns undefined when the guard excluded the row.
    */
   readonly confirmAppointment: (
     id: string,

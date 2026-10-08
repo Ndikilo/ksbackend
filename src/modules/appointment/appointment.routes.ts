@@ -206,6 +206,35 @@ const cancel = createRoute({
   },
 });
 
+const confirm = createRoute({
+  method: "post",
+  path: "/v1/appointments/{id}/confirm",
+  tags: ["Appointments"],
+  summary: "Confirm an appointment",
+  description: [
+    "The documented booking flow's second half: a patient books (status `pending`), the",
+    "appointment's practitioner CONFIRMS it (status `confirmed` — the booking is firm). Only the",
+    "appointment's own practitioner may confirm: the booking patient, other practitioners and",
+    "admins all get `404`, identical to an unknown id — no existence leak, no superpowers.",
+    "Illegal from any status other than `pending` (`409 APPOINTMENT_STATE_INVALID`) and after",
+    "the start time (`409 APPOINTMENT_STARTED`). The patient is notified through the",
+    "notification outbox, enqueued in the same transaction as the state change.",
+  ].join(" "),
+  request: { params: AppointmentIdParam },
+  responses: {
+    200: { ...jsonBody(AppointmentResponse), description: "The confirmed appointment." },
+    401: { ...jsonBody(ErrorResponse), description: "No valid session." },
+    404: {
+      ...jsonBody(ErrorResponse),
+      description: "No such appointment, or the caller is not the appointment's practitioner.",
+    },
+    409: {
+      ...jsonBody(ErrorResponse),
+      description: "`APPOINTMENT_STATE_INVALID` (not pending) or `APPOINTMENT_STARTED`.",
+    },
+  },
+});
+
 const getPolicy = createRoute({
   method: "get",
   path: "/v1/practitioners/me/booking-policy",
@@ -315,6 +344,18 @@ export const registerAppointmentRoutes = (app: OpenAPIHono<AppEnv>, runtime: App
         const service = yield* AppointmentService;
         const cancelled = yield* service.cancel(user, c.req.valid("param").id);
         return c.json(toResponse(cancelled), 200);
+      }),
+    ),
+  );
+
+  app.openapi(confirm, (c) =>
+    runAuth(
+      c,
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+        const service = yield* AppointmentService;
+        const confirmed = yield* service.confirm(user, c.req.valid("param").id);
+        return c.json(toResponse(confirmed), 200);
       }),
     ),
   );

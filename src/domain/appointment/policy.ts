@@ -75,6 +75,28 @@ export const judgeCancellation = (
 };
 
 /**
+ * The practitioner-driven confirm (P7.T3): ONLY a still-PENDING appointment is
+ * confirmable — `confirmed` is already firm (a second confirm is a state
+ * violation, not a no-op), and cancelled/completed/no_show left the actionable
+ * set. As with cancel/reschedule, the start time is the cutoff: a pending
+ * request whose slot has begun can no longer be accepted.
+ */
+export type ConfirmJudgement =
+  | { readonly kind: "not-confirmable"; readonly current: AppointmentStatus }
+  | { readonly kind: "started" }
+  | { readonly kind: "allowed" };
+
+export const judgeConfirm = (
+  appointment: { readonly status: AppointmentStatus; readonly startsAt: Date },
+  now: Date,
+): ConfirmJudgement => {
+  if (appointment.status !== "pending") {
+    return { kind: "not-confirmable", current: appointment.status };
+  }
+  return hasStarted(appointment.startsAt, now) ? { kind: "started" } : { kind: "allowed" };
+};
+
+/**
  * The reschedule half of the engine: while the appointment is actionable and
  * has not started it may be moved — the notice window does NOT gate
  * rescheduling (moving INTO more time is always an improvement; fees apply to

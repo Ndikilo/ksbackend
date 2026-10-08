@@ -21,7 +21,7 @@ import {
   SlotTaken,
 } from "@/domain/appointment/errors";
 import { cancelScenario, type LifecycleActor } from "@/domain/appointment/notifications";
-import { judgeCancellation, judgeReschedule } from "@/domain/appointment/policy";
+import { judgeCancellation, judgeConfirm, judgeReschedule } from "@/domain/appointment/policy";
 import type { ConsultationType } from "@/domain/practitioner/practitioner";
 import { Forbidden, NotFound, ValidationFailed } from "@/domain/shared/errors";
 import { IdGenerator } from "@/infra/ids";
@@ -163,6 +163,21 @@ export interface AppointmentServiceService {
     | AppointmentStateInvalid
     | AppointmentStarted
     | SqlError.SqlError
+  >;
+  /**
+   * The practitioner-driven confirm (P7.T3): the appointment's OWN practitioner
+   * accepts a still-PENDING request → `confirmed`. Everyone else — the booking
+   * patient included, other practitioners, admins — gets the same 404 as an
+   * unknown id (the P3.T4 matrix: no existence leak, no superpowers). The
+   * guarded pending-only write and the patient notification share one
+   * transaction.
+   */
+  readonly confirm: (
+    caller: AppointmentCaller,
+    id: string,
+  ) => Effect.Effect<
+    Appointment,
+    NotFound | AppointmentStateInvalid | AppointmentStarted | SqlError.SqlError
   >;
   /**
    * The caller's own booking policy (P3.T5): the notice window + late fee
@@ -600,6 +615,73 @@ export const AppointmentServiceLive = Layer.effect(
         }),
       );
 
+    /**
+     * Confirm authorization (P7.T3): the caller must be the appointment's OWN
+     * practitioner. The booking patient (confirm is the practitioner's
+     * acceptance, not the patient's), other practitioners and admins all get
+     * the same 404 as an unknown id — no existence leak, no superpowers (the
+     * P3.T4 matrix). A doctor/nurse-role caller with no practitioner profile
+     * 404s the same way (they cannot be the appointment's practitioner).
+     */
+    const resolveConfirmableBy = (
+      caller: AppointmentCaller,
+      appointment: Appointment,
+    ): Effect.Effect<void, NotFound | SqlError.SqlError> => {
+      const notFound = Effect.fail(new NotFound({ resource: "Appointment", id: appointment.id }));
+      const isPractitioner = caller.roles.includes("doctor") || caller.roles.includes("nurse");
+      if (!isPractitioner) {
+        return notFound;
+      }
+      return Effect.flatMap(practitioners.findByUserId(caller.id), (profile) =>
+        profile !== undefined && profile.id === appointment.practitionerProfileId
+          ? Effect.void
+          : notFound,
+      );
+    };
+
+    const confirm = (caller: AppointmentCaller, id: string) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          const at = yield* now;
+          // Serialize concurrent mutations of this appointment (double confirm,
+          // confirm-vs-cancel) — the second re-reads state after the first.
+          const appointment = yield* repo.lockById(id);
+          if (appointment === undefined) {
+            return yield* Effect.fail(new NotFound({ resource: "Appointment", id }));
+          }
+          yield* resolveConfirmableBy(caller, appointment);
+          const judgement = judgeConfirm(appointment, at);
+          if (judgement.kind === "not-confirmable") {
+            return yield* Effect.fail(new AppointmentStateInvalid({ current: judgement.current }));
+          }
+          if (judgement.kind === "started") {
+            return yield* Effect.fail(new AppointmentStarted({}));
+          }
+
+          // The SAME guarded pending-only write the payment funnel uses —
+          // under the row lock the guard is guaranteed to match, so undefined
+          // would be a broken invariant (defect, like the other repo writes).
+          const confirmed = yield* repo.confirmAppointment(id, at);
+          if (confirmed === undefined) {
+            return yield* Effect.dieMessage(
+              `confirm: appointment ${id} changed state under its lock.`,
+            );
+          }
+          // P6.T3/P7.T3: the confirmation joins the `confirmed` lifecycle
+          // scenario (the payment funnel's) — the patient learns the booking
+          // is firm; the practitioner drove it and gets no self-notification
+          // (domain/appointment/notifications.ts). Enqueued in the SAME
+          // transaction as the guarded write; a rolled-back confirm never
+          // notifies, and the dedup key makes a retried confirm a no-op.
+          yield* notifier.notify({
+            appointment: confirmed,
+            scenario: "confirmed",
+            actor: "practitioner",
+          });
+          return confirmed;
+        }),
+      );
+
     const getPolicy = (caller: AppointmentCaller) =>
       Effect.flatMap(requirePractitionerProfile(caller), repo.policyForPractitioner);
 
@@ -616,6 +698,6 @@ export const AppointmentServiceLive = Layer.effect(
           : updated;
       });
 
-    return { book, list, get, cancel, reschedule, getPolicy, putPolicy };
+    return { book, list, get, cancel, reschedule, confirm, getPolicy, putPolicy };
   }),
 );

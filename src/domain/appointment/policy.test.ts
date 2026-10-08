@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   judgeCancellation,
+  judgeConfirm,
   judgeReschedule,
   hasStarted,
   isActionableStatus,
@@ -153,6 +154,31 @@ describe("appointment cancellation policy (pure)", () => {
         });
       }
       expect(judgeReschedule(appointment, start).kind).toBe("started");
+    });
+  });
+
+  // The P7.T3 decision table the practitioner-confirm endpoint applies: the
+  // state gate is STRICTER than cancel/reschedule (pending ONLY — a confirmed
+  // appointment is already firm), the start cutoff is the same one.
+  describe("judgeConfirm", () => {
+    const appointment = { status: "pending" as const, startsAt: start };
+
+    it("allows only pending — every other status is not-confirmable with the current status", () => {
+      expect(judgeConfirm(appointment, new Date(start.getTime() - 48 * HOUR))).toEqual({
+        kind: "allowed",
+      });
+      for (const status of ["confirmed", "cancelled", "completed", "no_show"] as const) {
+        expect(
+          judgeConfirm({ ...appointment, status }, new Date(start.getTime() - 48 * HOUR)),
+        ).toEqual({ kind: "not-confirmable", current: status });
+      }
+    });
+
+    it("rejects past slots — the cutoff flips exactly at the start time", () => {
+      // 1ms before the start → still confirmable.
+      expect(judgeConfirm(appointment, new Date(start.getTime() - 1)).kind).toBe("allowed");
+      expect(judgeConfirm(appointment, start).kind).toBe("started");
+      expect(judgeConfirm(appointment, new Date(start.getTime() + HOUR)).kind).toBe("started");
     });
   });
 });
