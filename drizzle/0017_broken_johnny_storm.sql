@@ -1,0 +1,2 @@
+ALTER TABLE "phone_verification" ADD COLUMN "consumed_at" timestamp with time zone;--> statement-breakpoint
+CREATE UNIQUE INDEX "phone_verification_live_phone_uq" ON "phone_verification" USING btree ("phone") WHERE consumed_at IS NULL;
