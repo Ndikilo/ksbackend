@@ -2,7 +2,7 @@ CREATE TYPE "public"."notification_channel" AS ENUM('email', 'push', 'sms');--> 
 CREATE TYPE "public"."outbox_status" AS ENUM('pending', 'sending', 'sent', 'failed', 'dead');--> statement-breakpoint
 CREATE TABLE "notification_outbox" (
 	"id" uuid PRIMARY KEY NOT NULL,
-	"user_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
 	"channel" "notification_channel" NOT NULL,
 	"category" "notification_category" NOT NULL,
 	"scenario" text NOT NULL,

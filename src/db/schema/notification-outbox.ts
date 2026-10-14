@@ -30,7 +30,7 @@ export const notificationOutbox = pgTable(
   "notification_outbox",
   {
     id: uuid("id").primaryKey(),
-    userId: uuid("user_id")
+    userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     channel: notificationChannelEnum("channel").notNull(),
