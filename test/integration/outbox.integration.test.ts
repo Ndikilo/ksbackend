@@ -139,6 +139,10 @@ describe("notification outbox (real DB)", () => {
 
   afterAll(async () => {
     await runtime.dispose();
+    // End the pool BEFORE the container goes away — an idle connection
+    // terminated by the server shutdown otherwise surfaces as an
+    // uncaught 57P01 after the tests have passed.
+    await db.$client.end();
     await stopPg();
   });
 
