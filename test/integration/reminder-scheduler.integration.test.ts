@@ -111,6 +111,8 @@ describe("reminder scheduler (integration)", () => {
     readonly startsAt: Date;
     readonly createdAt: Date;
     readonly status?: "confirmed" | "cancelled" | "pending";
+    /** Required when status is "cancelled" (appointment_cancelled_has_timestamp). */
+    readonly cancelledAt?: Date;
   }) => {
     const slotId = crypto.randomUUID();
     await db.insert(availabilitySlot).values({
@@ -135,6 +137,7 @@ describe("reminder scheduler (integration)", () => {
       priceXaf: 5000,
       cancellationNoticeHours: 24,
       cancellationFeeXaf: 0,
+      cancelledAt: input.cancelledAt ?? null,
       createdAt: input.createdAt,
       updatedAt: input.createdAt,
     });
@@ -262,20 +265,29 @@ describe("reminder scheduler (integration)", () => {
       startsAt: new Date(NOW.getTime() + 30 * 60_000),
       createdAt: new Date(NOW.getTime() - 48 * 60 * 60_000),
       status: "cancelled",
+      // The CHECK pins cancelled ⇔ a timestamp — a cancelled row without one
+      // is uninsertable (first real-DB run finding).
+      cancelledAt: new Date(NOW.getTime() - 60_000),
     });
     // Both horizons are due for this one — but its user disabled every
     // channel for the appointments category, so nothing may enqueue.
     await seedAppointment({
       id: crypto.randomUUID(),
       patientUserId: patientNoEmail,
-      startsAt: new Date(NOW.getTime() + 30 * 60_000),
+      // 31 minutes out: both horizons are still due, and the distinct window
+      // avoids the (practitioner, starts_at) unique index — NOW is a FIXED
+      // base, so same-offset seeds would collide (first real-DB run finding).
+      startsAt: new Date(NOW.getTime() + 31 * 60_000),
       createdAt: new Date(NOW.getTime() - 48 * 60 * 60_000),
     });
 
     const summary = await runOnA(NOW);
 
     expect(summary.enqueued).toBe(0);
-    expect(summary.skipped).toBe(2); // the cancelled appointment, both horizons
+    // The cancelled appointment is excluded at the SCAN QUERY (candidates are
+    // confirmed-only), so it never reaches the horizon judge — `skipped`
+    // counts judge-level skips (started / booked-too-late), not cancellations.
+    expect(summary.skipped).toBe(0);
     const rows = await allRows();
     // Still exactly the ONE row from the race test — nothing new went out.
     expect(rows).toHaveLength(1);

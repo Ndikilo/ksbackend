@@ -26,6 +26,13 @@ export const databaseLayerFromUrl = (url: string) =>
  */
 export const TestDatabaseLive = Layer.unwrapScoped(
   Effect.gen(function* () {
+    // Same TEST_DATABASE_URL escape hatch as startTestPostgres: a machine
+    // without Docker runs the real-DB tiers against a local instance.
+    const externalUrl = process.env.TEST_DATABASE_URL;
+    if (externalUrl !== undefined && externalUrl !== "") {
+      yield* Effect.promise(() => applyMigrations(externalUrl));
+      return databaseLayerFromUrl(externalUrl);
+    }
     const container = yield* Effect.acquireRelease(
       Effect.promise(() => new PostgreSqlContainer("postgres:17").start()),
       (started) => Effect.promise(() => started.stop()),

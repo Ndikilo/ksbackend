@@ -44,6 +44,9 @@ const emailClient =
 const s3 = {
   bucket: await Effect.runPromise(Config.string("S3_BUCKET")),
   region: await Effect.runPromise(Config.string("S3_REGION")),
+  forcePathStyle: await Effect.runPromise(
+    Config.boolean("S3_FORCE_PATH_STYLE").pipe(Config.withDefault(false)),
+  ),
 };
 
 const authOptions = await Effect.runPromise(loadAuthOptions);

@@ -114,6 +114,14 @@ export const OutboxRepoLive = Layer.effect(
                 eq(notificationOutbox.status, "pending"),
                 lte(notificationOutbox.availableAt, now),
               ),
+              // A FAILED row is re-eligible once its backoff has passed — this
+              // branch IS the retry policy's claim half (the first real-DB run
+              // caught it missing, which left every notification dead at
+              // attempt 1).
+              and(
+                eq(notificationOutbox.status, "failed"),
+                lte(notificationOutbox.availableAt, now),
+              ),
               and(
                 eq(notificationOutbox.status, "sending"),
                 lte(notificationOutbox.updatedAt, stallBefore),

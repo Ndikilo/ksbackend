@@ -95,7 +95,11 @@ export const createTestHarness = async (
   authOpts?: {
     readonly rateLimit?: { readonly enabled: boolean };
     /** Wires makeAuth's beforeDelete S3 cleanup to a real (LocalStack) bucket. */
-    readonly s3?: { readonly bucket: string; readonly region: string };
+    readonly s3?: {
+      readonly bucket: string;
+      readonly region: string;
+      readonly forcePathStyle: boolean;
+    };
   },
   appOpts?: {
     /** Registers a test-only route that throws, to drive the 500 path. */

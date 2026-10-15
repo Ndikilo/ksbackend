@@ -38,7 +38,11 @@ export type AuthOptions = {
   readonly emailClient: EmailClient;
   readonly trustedOrigins?: ReadonlyArray<string>;
   /** When set, uploaded files are deleted from S3 before account deletion; DB rows cascade. */
-  readonly s3?: { readonly bucket: string; readonly region: string };
+  readonly s3?: {
+    readonly bucket: string;
+    readonly region: string;
+    readonly forcePathStyle: boolean;
+  };
   /**
    * Force better-auth's own rate limiter on/off. Left undefined it follows
    * better-auth's default (on in production). Tests set `true` to assert the
@@ -162,7 +166,14 @@ export const makeAuth = (options: AuthOptions) => {
           if (first === undefined) return;
           const keys = [first.cmc, first.nic, first.photo].filter((k): k is string => k !== null);
           if (keys.length === 0) return;
-          const client = new S3Client({ region: options.s3.region });
+          // Same construction contract as the storage adapter: path-style for
+          // S3-compatible endpoints (LocalStack/MinIO), checksums only when
+          // required; the endpoint itself rides AWS_ENDPOINT_URL_S3.
+          const client = new S3Client({
+            region: options.s3.region,
+            forcePathStyle: options.s3.forcePathStyle,
+            requestChecksumCalculation: "WHEN_REQUIRED",
+          });
           await client.send(
             new DeleteObjectsCommand({
               Bucket: options.s3.bucket,

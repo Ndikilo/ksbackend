@@ -30,13 +30,14 @@ describe("account deletion S3 cleanup (integration)", () => {
   beforeAll(async () => {
     container = await new LocalstackContainer("localstack/localstack:3.8.1").start();
     const endpoint = container.getConnectionUri();
-    // The S3Client inside auth's beforeDelete is constructed with just a region
-    // — creds/endpoint/path-style come from the environment's default chain.
+    // The S3Client inside auth's beforeDelete mirrors the storage adapter:
+    // creds/endpoint from the SDK's default env chain, path-style from
+    // S3_FORCE_PATH_STYLE (virtual-host form can't resolve on LocalStack).
     process.env.AWS_ACCESS_KEY_ID = "test";
     process.env.AWS_SECRET_ACCESS_KEY = "test";
     process.env.AWS_ENDPOINT_URL_S3 = endpoint;
     process.env.AWS_REGION = "us-east-1";
-    process.env.AWS_S3_ADDRESSING_STYLE = "path";
+    process.env.S3_FORCE_PATH_STYLE = "true";
 
     const admin = new S3Client({
       region: "us-east-1",
@@ -47,7 +48,9 @@ describe("account deletion S3 cleanup (integration)", () => {
     await admin.send(new CreateBucketCommand({ Bucket: BUCKET }));
     admin.destroy();
 
-    harness = await createTestHarness(undefined, { s3: { bucket: BUCKET, region: "us-east-1" } });
+    harness = await createTestHarness(undefined, {
+      s3: { bucket: BUCKET, region: "us-east-1", forcePathStyle: true },
+    });
     uploader = new S3Client({
       region: "us-east-1",
       endpoint,

@@ -32,8 +32,16 @@ describe("readyz (integration)", () => {
     await auth.close();
   });
 
-  it("returns 200 when the real database is reachable", async () => {
-    const res = await app.request("/readyz");
+  it("returns 200 once the real database answers (polls the readiness probe)", async () => {
+    // First-use pool acquisition can take seconds on a cold container (the
+    // CI run saw a 2.7s 503) — the probe's contract is 503-until-ready, so
+    // poll within a bounded window instead of a single shot.
+    const deadline = Date.now() + 30_000;
+    let res = await app.request("/readyz");
+    while (res.status !== 200 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      res = await app.request("/readyz");
+    }
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "ok" });
   });

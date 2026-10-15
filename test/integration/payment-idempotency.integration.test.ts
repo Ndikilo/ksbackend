@@ -25,6 +25,20 @@ import { startTestPostgres } from "../support/testcontainers";
 type Db = ReturnType<typeof drizzle>;
 type PaymentInsert = typeof paymentTable.$inferInsert;
 
+/** Concatenate an Error message chain: drizzle wraps the pg rejection
+ * ("Failed query: …") with the CHECK/unique violation on `cause`. */
+const causeChainText = (top: Error): string => {
+  const parts: string[] = [];
+  let current: Error | undefined = top;
+  while (current !== undefined) {
+    parts.push(current.message);
+    // SAFETY: ES2022 Error#cause is documented as `unknown` but holds the
+    // driver's own Error here; the loop re-checks instanceof before use.
+    current = current.cause as Error | undefined;
+  }
+  return parts.join(" | ");
+};
+
 /** Fire the inserts concurrently and classify outcomes (no user-visible throw). */
 const raceInserts = async (
   db: Db,
@@ -36,7 +50,9 @@ const raceInserts = async (
   for (const outcome of outcomes) {
     if (outcome.status === "fulfilled") {
       winners += 1;
-    } else if (String(outcome.reason).includes("payment_idempotency_key_unique")) {
+      continue;
+    }
+    if (causeChainText(outcome.reason).includes("payment_idempotency_key_unique")) {
       uniqueViolations += 1;
     } else {
       throw outcome.reason;
@@ -135,8 +151,10 @@ describe("payment table (integration) — idempotency constraint", () => {
     };
 
     const { winners, uniqueViolations } = await raceInserts(db, [
-      { ...base, providerChargeId: "race-a" },
-      { ...base, providerChargeId: "race-b" },
+      // Distinct PRIMARY keys: the collision under test is the idempotency
+      // key's unique index, not the pkey (first real-DB run finding).
+      { ...base, id: crypto.randomUUID(), providerChargeId: "race-a" },
+      { ...base, id: crypto.randomUUID(), providerChargeId: "race-b" },
     ]);
     expect(winners).toBe(1);
     expect(uniqueViolations).toBe(1);
@@ -182,14 +200,28 @@ describe("payment table (integration) — idempotency constraint", () => {
       ...overrides,
     });
 
-    await expect(db.insert(paymentTable).values(charge({ amountXaf: 0 }))).rejects.toThrow(
+    await rejectsOnConstraint(
+      db.insert(paymentTable).values(charge({ amountXaf: 0 })),
       /payment_amount_positive/,
     );
-    await expect(
+    await rejectsOnConstraint(
       db.insert(paymentTable).values(charge({ status: "failed", receiptNumber: "KS-RECEIPT-1" })),
-    ).rejects.toThrow(/payment_receipt_only_when_paid/);
-    await expect(
+      /payment_receipt_only_when_paid/,
+    );
+    await rejectsOnConstraint(
       db.insert(paymentTable).values(charge({ status: "succeeded", refundedAt: new Date() })),
-    ).rejects.toThrow(/payment_refunded_has_timestamp/);
+      /payment_refunded_has_timestamp/,
+    );
+
+    /** The insert must reject, with the named CHECK violation in its cause chain. */
+    async function rejectsOnConstraint(p: Promise<unknown>, pattern: RegExp): Promise<void> {
+      const text = await p.then(
+        () => "",
+        (rejection) => causeChainText(rejection),
+      );
+      // An empty chain means the insert FULFILLED — the guard did not fire.
+      expect(text).not.toBe("");
+      expect(text).toMatch(pattern);
+    }
   });
 });
