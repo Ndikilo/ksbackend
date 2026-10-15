@@ -65,6 +65,13 @@ export default defineConfig({
           // real route -> service -> repo path, so allow headroom.
           testTimeout: 120_000,
           hookTimeout: 120_000,
+          // One FILE at a time (single fork): every file runs its own
+          // throwaway Postgres, and CI runners OOM under N parallel containers
+          // (the killed containers surfaced as 57P01 ProcessInterrupts and a
+          // permanently unready /readyz on the first CI execution of these
+          // tiers).
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
         },
       },
       {
@@ -76,6 +83,8 @@ export default defineConfig({
           // Booting a Postgres container (first run pulls the image) needs headroom.
           testTimeout: 120_000,
           hookTimeout: 120_000,
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
         },
       },
     ],
