@@ -72,6 +72,9 @@ jobs:
       # Integration tests provision their own Postgres via Testcontainers
       # (Docker is available on ubuntu-latest by default).
       - name: Integration tests (Testcontainers)
+        env:
+          # Same reason as the Test step: no developer .env exists in CI.
+          EMAIL_FROM: "KanaSante CI <ci@example.invalid>"
         run: bun run test:integration
 
   # The deploy artifact is always build-tested; never pushed (P0.T8).
