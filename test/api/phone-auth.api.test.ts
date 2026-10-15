@@ -373,7 +373,7 @@ describe("phone registration API (P8.T6) — signup, fallback, attach", () => {
   });
 });
 
-describe("phone registration API (P8.T6) — prod gate + IP throttle", () => {
+describe("phone registration API (P8.T6) — IP throttle", () => {
   let harness: TestHarness;
   let channels: ReturnType<typeof makeScriptedChannels>;
 
@@ -404,10 +404,25 @@ describe("phone registration API (P8.T6) — prod gate + IP throttle", () => {
     expect(body.error.code).toBe("OTP_SEND_THROTTLED");
     expect(body.error.details[0]?.scope).toBe("ip");
   });
+});
 
-  it("prod with NO channel configured is a 503 — a devCode can never leak there", async () => {
+describe("phone registration API (P8.T6) — prod delivery gate", () => {
+  // Its OWN harness: the IP-throttle suite above exhausts the shared 900s
+  // budget, and a throttled request 429s BEFORE the delivery gate is reached
+  // (surfaced by the first-ever real execution of this tier in CI).
+  let harness: TestHarness;
+  let channels: ReturnType<typeof makeScriptedChannels>;
+
+  beforeAll(async () => {
+    channels = makeScriptedChannels();
     channels.plan.sms = "off";
     channels.plan.email = "off";
+    harness = await createTestHarness({ APP_ENV: "prod" }, undefined, { channels: channels.layer });
+  });
+
+  afterAll(() => harness.dispose());
+
+  it("prod with NO channel configured is a 503 — a devCode can never leak there", async () => {
     const res = await harness.post("/v1/auth/phone/start", {
       phone: "+237682222201",
       email: "phone.prod@example.com",

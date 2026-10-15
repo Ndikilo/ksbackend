@@ -193,7 +193,7 @@ describe("payments API (real DB)", () => {
       .insert(profession)
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
     await harness.db.insert(practitionerProfile).values({
-      id: "prof-pay-1",
+      id: crypto.randomUUID(),
       userId: await harness.userIdFor("payer@example.com"),
       professionId,
     });

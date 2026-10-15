@@ -56,6 +56,9 @@ jobs:
           fi
 
       - name: Test (vitest — unit + api, with coverage)
+        env:
+          # CI has no developer .env; the harness boots the real env loaders.
+          EMAIL_FROM: "KanaSante CI <ci@example.invalid>"
         run: bun run test:coverage
 
       - name: Upload coverage report
