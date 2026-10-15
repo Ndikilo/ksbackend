@@ -204,10 +204,10 @@ describe("booking service (integration) — atomic slot lock", () => {
 
   afterAll(async () => {
     await runtime.dispose();
-    await db.$client.end();
-    // End the pool BEFORE the container goes away — an idle connection
-    // terminated by the server shutdown otherwise surfaces as an
-    // uncaught 57P01 after the tests have passed.
+    // Idle pooled connections terminated by the container shutdown emit a
+    // 57P01 'error' on the pool — listen so teardown never becomes an
+    // uncaught exception after the tests have passed.
+    db.$client.on("error", () => {});
     await db.$client.end();
     await stopPg();
   });
