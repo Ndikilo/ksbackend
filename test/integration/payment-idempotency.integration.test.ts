@@ -134,10 +134,6 @@ describe("payment table (integration) — idempotency constraint", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await db.$client.end();
-    // End the pool BEFORE the container goes away — an idle connection
-    // terminated by the server shutdown otherwise surfaces as an
-    // uncaught 57P01 after the tests have passed.
     // Idle pooled connections terminated by the container shutdown emit a
     // 57P01 'error' on the pool — listen so teardown never becomes an
     // uncaught exception after the tests have passed.
