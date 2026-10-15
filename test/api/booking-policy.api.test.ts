@@ -4,7 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { user } from "@/db/schema/auth";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
-import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
@@ -59,9 +58,7 @@ describe("practitioner booking policy (real DB)", () => {
     await harness.db
       .insert(profession)
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
-    practitionerProfileId = crypto.randomUUID();
-    await harness.db.insert(practitionerProfile).values({
-      id: practitionerProfileId,
+    practitionerProfileId = await harness.seedPractitionerProfile({
       userId: await harness.userIdFor("policy-doc@example.com"),
       professionId,
     });

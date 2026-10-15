@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verification } from "@/db/schema/auth";
 import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
@@ -29,10 +29,13 @@ describe("OTP verification safety (real DB)", () => {
     const otp = harness.otpFor(email);
 
     // Age the verification record past its 5-minute expiry in the store.
+    const agedAt = new Date(Date.now() - 60_000);
     await harness.db
       .update(verification)
-      .set({ expiresAt: sql`now() - interval '1 second'` })
-      .where(eq(verification.identifier, email));
+      .set({ expiresAt: agedAt })
+      // The reset OTP lives under the plugin's typed identifier, NOT the
+      // bare email (that row is the sign-up verification).
+      .where(eq(verification.identifier, `forget-password-otp-${email}`));
 
     const stale = await tryReset(email, otp, "attacker-password-1");
     expect(stale.status).not.toBe(200);

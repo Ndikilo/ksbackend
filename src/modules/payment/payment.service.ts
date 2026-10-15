@@ -250,7 +250,27 @@ export const PaymentServiceLive = Layer.effect(
 
         // The provider's reference id IS our payment id: a retry with the same
         // reference can never double-charge (P5.T1 contract).
-        const initiated = yield* initiateOnProvider(input.provider, charge, input.payerPhone);
+        const attempt = yield* Effect.either(
+          initiateOnProvider(input.provider, charge, input.payerPhone),
+        );
+        if (Either.isLeft(attempt)) {
+          const error = attempt.left;
+          // A DECLINE is definitive: stamp the row failed (guarded terminal
+          // write) so the retry mints a FRESH charge instead of re-driving a
+          // dead reference (the first real-DB run caught the row lying
+          // `initiated` after a 402). Unavailable/not-configured stay
+          // initiated — those genuinely may be retried on the same charge.
+          if (error._tag === "PaymentDeclined") {
+            yield* payments.transitionToTerminal(charge.id, {
+              status: "failed",
+              providerReference: null,
+              failureReason: error.reason,
+              now: yield* now,
+            });
+          }
+          return yield* Effect.fail(error);
+        }
+        const initiated = attempt.right;
 
         const pending = yield* payments.markPending(charge.id, {
           providerChargeId: initiated.providerChargeId,

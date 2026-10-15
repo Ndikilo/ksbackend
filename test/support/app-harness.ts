@@ -4,6 +4,8 @@ import { ConfigProvider, Effect, Layer, ManagedRuntime } from "effect";
 import { expect } from "vitest";
 import { adminProfile } from "@/db/schema/admin-profile";
 import { user } from "@/db/schema/auth";
+import { practitionerProfile } from "@/db/schema/practitioner-profile";
+import { profile } from "@/db/schema/profile";
 import type { AdminScope } from "@/domain/admin/admin";
 import { createApp } from "@/http/app";
 import { makeAuth, type AuthOptions } from "@/infra/auth";
@@ -36,6 +38,17 @@ export type TestHarness = {
   readonly post: (path: string, body: JsonValue, cookie?: string) => Promise<Response>;
   readonly signUpAndVerify: (email: string, password: string, name: string) => Promise<string>;
   readonly userIdFor: (email: string) => Promise<string>;
+  /**
+   * Insert a practitioner fixture: the BASE profile row (findByUserId
+   * inner-joins it) plus the practitioner_profile row. Extra values
+   * (e.g. verificationStatus) ride through to practitioner_profile.
+   */
+  readonly seedPractitionerProfile: (input: {
+    readonly userId: string;
+    readonly professionId: string;
+    readonly id?: string;
+    readonly extra?: Partial<typeof practitionerProfile.$inferInsert>;
+  }) => Promise<string>;
   /** Promote an existing user to admin with the given scope (role + admin_profile). */
   readonly promoteToAdmin: (email: string, scope?: AdminScope) => Promise<void>;
   readonly otpFor: (email: string) => string;
@@ -152,9 +165,14 @@ export const createTestHarness = async (
   const app = createApp(runtime, auth.instance);
   // Test-only escape hatch: a route that always throws an unhandled error, so
   // cross-cutting concerns (error mapping, reporting) can be driven end-to-end.
+  // Each throw carries a distinct counter — Sentry's default Dedupe
+  // integration drops identical consecutive events, which ate the second
+  // test's capture (first real-DB run finding).
+  let boomCounter = 0;
   if (appOpts?.throwingRoute === true) {
     app.get("/test-only/boom", () => {
-      throw new Error("boom (test-only throwing route)");
+      boomCounter += 1;
+      throw new Error(`boom (test-only throwing route #${boomCounter})`);
     });
   }
 
@@ -211,6 +229,42 @@ export const createTestHarness = async (
     return id;
   };
 
+  const seedPractitionerProfile = async (input: {
+    readonly userId: string;
+    readonly professionId: string;
+    readonly id?: string;
+    readonly extra?: Partial<typeof practitionerProfile.$inferInsert>;
+  }): Promise<string> => {
+    // The user may already carry a base profile AND/OR a practitioner row
+    // (e.g. a payer who completed the patient profile to book) — seed what is
+    // missing and return the practitioner id either way.
+    const existing = await db
+      .select({ id: practitionerProfile.id })
+      .from(practitionerProfile)
+      .where(eq(practitionerProfile.userId, input.userId))
+      .limit(1);
+    if (existing[0] !== undefined) return existing[0].id;
+    const id = input.id ?? crypto.randomUUID();
+    await db
+      .insert(profile)
+      .values({
+        id: crypto.randomUUID(),
+        userId: input.userId,
+        surname: "Practitioner",
+        givenNames: "Test",
+        consentAcceptedAt: new Date(),
+        consentVersion: "test",
+      })
+      .onConflictDoNothing();
+    await db.insert(practitionerProfile).values({
+      id,
+      userId: input.userId,
+      professionId: input.professionId,
+      ...input.extra,
+    });
+    return id;
+  };
+
   const dispose = async (): Promise<void> => {
     await runtime.dispose();
     await auth.close();
@@ -218,5 +272,16 @@ export const createTestHarness = async (
     await pg.stop();
   };
 
-  return { app, db, sent, post, signUpAndVerify, userIdFor, promoteToAdmin, otpFor, dispose };
+  return {
+    app,
+    db,
+    sent,
+    post,
+    signUpAndVerify,
+    userIdFor,
+    seedPractitionerProfile,
+    promoteToAdmin,
+    otpFor,
+    dispose,
+  };
 };

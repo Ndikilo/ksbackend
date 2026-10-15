@@ -40,11 +40,21 @@ export const TestDatabaseLive = Layer.unwrapScoped(
  * Start a migrated Postgres container and return its URL + a stop function.
  * Used when a test needs the URL to wire something outside the Effect layer too
  * (e.g. better-auth's own pool), so both point at the same database.
+ *
+ * Escape hatch: when TEST_DATABASE_URL is set (a machine without Docker can
+ * run the real-DB tier against a local instance), it is used in place of the
+ * container, migrations are applied, and `stop` becomes a no-op — the caller
+ * owns that database's lifecycle.
  */
 export const startTestPostgres = async (): Promise<{
   readonly url: string;
   readonly stop: () => Promise<void>;
 }> => {
+  const externalUrl = process.env.TEST_DATABASE_URL;
+  if (externalUrl !== undefined && externalUrl !== "") {
+    await applyMigrations(externalUrl);
+    return { url: externalUrl, stop: async () => {} };
+  }
   const container = await new PostgreSqlContainer("postgres:17").start();
   const url = container.getConnectionUri();
   await applyMigrations(url);

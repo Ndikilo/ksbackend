@@ -6,7 +6,6 @@ import { appointment as appointmentTable } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
 import { notificationOutbox } from "@/db/schema/notification-outbox";
-import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { createTestHarness, type TestHarness, testPassword } from "../support/app-harness";
 
@@ -93,9 +92,7 @@ describe("appointments API (real DB)", () => {
     await harness.db
       .insert(profession)
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
-    practitionerId = crypto.randomUUID();
-    await harness.db.insert(practitionerProfile).values({
-      id: practitionerId,
+    practitionerId = await harness.seedPractitionerProfile({
       userId: await harness.userIdFor("doctor@example.com"),
       professionId,
     });
@@ -107,7 +104,7 @@ describe("appointments API (real DB)", () => {
       email: "doctor-b@example.com",
       emailVerified: true,
     });
-    await harness.db.insert(practitionerProfile).values({
+    await harness.seedPractitionerProfile({
       id: otherPractitionerId,
       userId: "user-doctor-b",
       professionId,

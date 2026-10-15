@@ -6,7 +6,6 @@ import { appointment as appointmentTable } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
 import { notificationOutbox } from "@/db/schema/notification-outbox";
-import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { createTestHarness, testPassword, type TestHarness } from "../support/app-harness";
 
@@ -152,18 +151,16 @@ describe("POST /v1/appointments/{id}/confirm (real DB)", () => {
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
     doctorAProfileId = crypto.randomUUID();
     doctorBProfileId = crypto.randomUUID();
-    await harness.db.insert(practitionerProfile).values([
-      {
-        id: doctorAProfileId,
-        userId: doctorAUserId,
-        professionId,
-      },
-      {
-        id: doctorBProfileId,
-        userId: await harness.userIdFor("confirm-doc-b@example.com"),
-        professionId,
-      },
-    ]);
+    await harness.seedPractitionerProfile({
+      id: doctorAProfileId,
+      userId: doctorAUserId,
+      professionId,
+    });
+    await harness.seedPractitionerProfile({
+      id: doctorBProfileId,
+      userId: await harness.userIdFor("confirm-doc-b@example.com"),
+      professionId,
+    });
     offeringAId = crypto.randomUUID();
     await harness.db.insert(consultationOffering).values({
       id: offeringAId,
@@ -285,7 +282,11 @@ describe("POST /v1/appointments/{id}/confirm (real DB)", () => {
     // completed and no_show (terminal statuses never reachable from here —
     // seeded directly). Drive every attempt, then assert: no awaits in loop.
     const terminalIds = await Promise.all(
-      (["completed", "no_show"] as const).map((status) => seedAppointment(status, 55 * 24 * 60)),
+      // DISTINCT windows: the unique (practitioner, starts_at) index rejects
+      // same-millisecond collisions when these fixtures run in parallel.
+      (["completed", "no_show"] as const).map((status, i) =>
+        seedAppointment(status, (55 + i) * 24 * 60),
+      ),
     );
     const terminalAttempts = await Promise.all(terminalIds.map((id) => confirm(id, doctorACookie)));
     const terminalCodes = await Promise.all(

@@ -6,7 +6,6 @@ import { appointment as appointmentTable } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
 import { payment as paymentTable } from "@/db/schema/payment";
-import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import {
   type ChargeStatus,
@@ -101,6 +100,7 @@ describe("payments API (real DB)", () => {
   let payerCookie: string;
   let otherCookie: string;
   let payerUserId: string;
+  let paymentProfileId: string;
   let offeringId: string;
 
   const secret = "test-webhook-secret-at-least-16-chars";
@@ -111,7 +111,7 @@ describe("payments API (real DB)", () => {
     const freshSlot = crypto.randomUUID();
     await harness.db.insert(availabilitySlot).values({
       id: freshSlot,
-      practitionerProfileId: "prof-pay-1",
+      practitionerProfileId: paymentProfileId,
       startsAt,
       endsAt: new Date(startsAt.getTime() + 60 * 60_000),
       consultationTypes: ["in_person"],
@@ -192,15 +192,14 @@ describe("payments API (real DB)", () => {
     await harness.db
       .insert(profession)
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
-    await harness.db.insert(practitionerProfile).values({
-      id: crypto.randomUUID(),
+    paymentProfileId = await harness.seedPractitionerProfile({
       userId: await harness.userIdFor("payer@example.com"),
       professionId,
     });
     offeringId = crypto.randomUUID();
     await harness.db.insert(consultationOffering).values({
       id: offeringId,
-      practitionerProfileId: "prof-pay-1",
+      practitionerProfileId: paymentProfileId,
       consultationType: "in_person",
       durationMin: 60,
       priceXaf: 5000,
@@ -321,7 +320,7 @@ describe("payments API (real DB)", () => {
       expect(calls.initiate).toBe(callsBefore + 1); // the provider WAS called again (same reference)
     });
 
-    it("an already-succeeded charge blocks re-paying with 409 PAYMENT_STATE_INVALID", async () => {
+    it("an already-succeeded charge blocks re-paying with 409 (the booking is confirmed, so the appointment-state guard fires first)", async () => {
       const appointmentId = await bookAppointment();
       const charge = await json<{ id: string }>(
         await checkout({ appointmentId, provider: "momo", payerPhone: "+237690000000" }),
@@ -330,16 +329,22 @@ describe("payments API (real DB)", () => {
       const res = await checkout({ appointmentId, provider: "momo", payerPhone: "+237690000000" });
       expect(res.status).toBe(409);
       const body = await json<{ error: { code: string } }>(res);
-      expect(body.error.code).toBe("PAYMENT_STATE_INVALID");
+      // A succeeded charge ALWAYS implies a confirmed booking (the atomic
+      // invariant), so the initiate's appointment-payability guard rejects —
+      // still a 409, still an honest block of the double payment.
+      expect(body.error.code).toBe("APPOINTMENT_STATE_INVALID");
     });
   });
 
   describe("POST /v1/payments/webhook", () => {
     it("rejects a MISSING signature (fail-closed, payload never processed)", async () => {
-      const res = await webhookPost(
-        { provider: "momo", providerChargeId: "x", status: "succeeded" },
-        undefined,
-      );
+      // Truly UNSIGNED: no signature header at all (the helper's undefined
+      // signature means "sign it for me" — the exact trap this test guards).
+      const res = await harness.app.request("/v1/payments/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "momo", providerChargeId: "x", status: "succeeded" }),
+      });
       expect(res.status).toBe(401);
       const body = await json<{ error: { code: string } }>(res);
       expect(body.error.code).toBe("WEBHOOK_SIGNATURE_INVALID");

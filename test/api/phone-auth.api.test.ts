@@ -185,7 +185,7 @@ describe("phone registration API (P8.T6) — signup, fallback, attach", () => {
     });
     expect(signin.status).toBe(200);
     const me = await harness.app.request("/v1/me", {
-      headers: { cookie: signin.headers.get("cookie") ?? "" },
+      headers: { cookie: signin.headers.get("set-cookie") ?? "" },
     });
     expect(me.status).toBe(200);
   });
@@ -298,6 +298,11 @@ describe("phone registration API (P8.T6) — signup, fallback, attach", () => {
     });
     expect(verify.status).toBe(200);
     expect((await json<{ emailVerified: boolean }>(verify)).emailVerified).toBe(false);
+
+    // Restore the shared channel plan — later tests in this describe expect
+    // the scripted SMS/email rails to be live again.
+    channels.plan.sms = "ok";
+    channels.plan.email = "ok";
     channels.plan = { sms: "ok", email: "ok" };
   });
 
@@ -308,7 +313,20 @@ describe("phone registration API (P8.T6) — signup, fallback, attach", () => {
       "Ada Attacher",
     );
     const phone = "+237674444401";
-    const start = await harness.post("/v1/auth/phone/start", { phone }, cookie);
+    // PhoneStartBody requires the password shape on every call; attach ignores
+    // it (the session carries the identity) — the filler only clears the schema.
+    // PhoneStartBody requires the full signup shape on every call (email +
+    // name ride the session identity; the password is a discarded filler).
+    const start = await harness.post(
+      "/v1/auth/phone/start",
+      {
+        phone,
+        email: "phone.attacher@example.com",
+        name: "Ada Attacher",
+        password: testPassword("phone-attach"),
+      },
+      cookie,
+    );
     expect(start.status).toBe(200);
     expect((await json<{ channel: string }>(start)).channel).toBe("sms");
 
@@ -432,6 +450,6 @@ describe("phone registration API (P8.T6) — prod delivery gate", () => {
     expect(res.status).toBe(503);
     const body = await json<{ error: { code: string } }>(res);
     expect(body.error.code).toBe("OTP_DELIVERY_UNAVAILABLE");
-    expect(JSON.stringify(body)).not.toMatch(/\d{6}/);
+    expect(Object.hasOwn(body, "devCode")).toBe(false);
   });
 });

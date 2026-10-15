@@ -5,7 +5,6 @@ import { user } from "@/db/schema/auth";
 import { appointment as appointmentTable } from "@/db/schema/appointment";
 import { availabilitySlot } from "@/db/schema/availability-slot";
 import { consultationOffering } from "@/db/schema/consultation-offering";
-import { practitionerProfile } from "@/db/schema/practitioner-profile";
 import { profession } from "@/db/schema/profession";
 import { createTestHarness, type TestHarness } from "../support/app-harness";
 
@@ -115,18 +114,16 @@ describe("appointments authorization (real DB)", () => {
       .values({ id: professionId, nameEn: "Doctor", nameFr: "Médecin" });
     doctorAProfileId = crypto.randomUUID();
     doctorBProfileId = crypto.randomUUID();
-    await harness.db.insert(practitionerProfile).values([
-      {
-        id: doctorAProfileId,
-        userId: await harness.userIdFor("authz-doc-a@example.com"),
-        professionId,
-      },
-      {
-        id: doctorBProfileId,
-        userId: await harness.userIdFor("authz-doc-b@example.com"),
-        professionId,
-      },
-    ]);
+    await harness.seedPractitionerProfile({
+      id: doctorAProfileId,
+      userId: await harness.userIdFor("authz-doc-a@example.com"),
+      professionId,
+    });
+    await harness.seedPractitionerProfile({
+      id: doctorBProfileId,
+      userId: await harness.userIdFor("authz-doc-b@example.com"),
+      professionId,
+    });
     offeringAId = crypto.randomUUID();
     offeringBId = crypto.randomUUID();
     await harness.db.insert(consultationOffering).values([

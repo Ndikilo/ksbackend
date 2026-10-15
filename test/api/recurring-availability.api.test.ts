@@ -16,7 +16,17 @@ const PROFESSION_ID = "0198e3f0-3000-7000-8000-000000000001";
 const EXCEPTION_ID = "0198e3f0-3000-7000-8000-000000000101";
 const EXTRA_EXCEPTION_ID = "0198e3f0-3000-7000-8000-000000000102";
 const UNKNOWN_ID = "0198e3f0-3000-7000-8000-000000000999";
-const RULE_DATE = "2026-09-07";
+// The public window filters past slots, so these fixtures must ride AHEAD of
+// the calendar: anchor on the next Monday (1-7 days out) and derive everything
+// from it. The 2026-09-07 constants this file once used aged into the past.
+const dateAtOffset = (daysFromNow: number): string => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + daysFromNow);
+  return d.toISOString().slice(0, 10);
+};
+const RULE_OFFSET = ((((1 - new Date().getUTCDay() + 7) % 7) + 6) % 7) + 1;
+const RULE_DATE = dateAtOffset(RULE_OFFSET);
+const DAY_AFTER = dateAtOffset(RULE_OFFSET + 1);
 
 describe("recurring availability API (real DB)", () => {
   let harness: TestHarness;
@@ -158,7 +168,7 @@ describe("recurring availability API (real DB)", () => {
   it("expands overnight rules across midnight in the requested public window", async () => {
     const response = await request(
       "GET",
-      `/v1/practitioners/${doctorId}/availability?from=2026-09-07T20%3A00%3A00.000Z&to=2026-09-08T02%3A00%3A00.000Z`,
+      `/v1/practitioners/${doctorId}/availability?from=${RULE_DATE}T20%3A00%3A00.000Z&to=${DAY_AFTER}T02%3A00%3A00.000Z`,
       patientCookie,
     );
     expect(response.status).toBe(200);
@@ -166,10 +176,10 @@ describe("recurring availability API (real DB)", () => {
       readonly data: ReadonlyArray<{ readonly startsAt: string }>;
     }>(response);
     expect(body.data.map((slot) => slot.startsAt)).toEqual([
-      "2026-09-07T21:00:00.000Z",
-      "2026-09-07T22:00:00.000Z",
-      "2026-09-07T23:00:00.000Z",
-      "2026-09-08T00:00:00.000Z",
+      `${RULE_DATE}T21:00:00.000Z`,
+      `${RULE_DATE}T22:00:00.000Z`,
+      `${RULE_DATE}T23:00:00.000Z`,
+      `${DAY_AFTER}T00:00:00.000Z`,
     ]);
   });
 
@@ -271,7 +281,7 @@ describe("recurring availability API (real DB)", () => {
       (
         await request("POST", "/v1/practitioners/me/availability/exceptions", doctorCookie, {
           id: EXCEPTION_ID,
-          date: "2026-09-08",
+          date: DAY_AFTER,
           kind: "blocked",
         })
       ).status,
@@ -298,7 +308,7 @@ describe("recurring availability API (real DB)", () => {
     expect(
       (
         await request("POST", "/v1/practitioners/me/availability/exceptions", doctorCookie, {
-          date: "2026-09-08",
+          date: DAY_AFTER,
           kind: "extra",
           startTime: "10:00",
           endTime: "11:00",
@@ -316,7 +326,7 @@ describe("recurring availability API (real DB)", () => {
       doctorCookie,
       {
         id: EXTRA_EXCEPTION_ID,
-        date: "2026-09-08",
+        date: DAY_AFTER,
         kind: "extra",
         startTime: "14:00",
         endTime: "15:00",
@@ -332,7 +342,7 @@ describe("recurring availability API (real DB)", () => {
 
     const publicResponse = await request(
       "GET",
-      `/v1/practitioners/${doctorId}/availability?from=2026-09-08T12%3A00%3A00.000Z&to=2026-09-08T15%3A00%3A00.000Z`,
+      `/v1/practitioners/${doctorId}/availability?from=${DAY_AFTER}T12%3A00%3A00.000Z&to=${DAY_AFTER}T15%3A00%3A00.000Z`,
       patientCookie,
     );
     expect(publicResponse.status).toBe(200);
@@ -340,7 +350,7 @@ describe("recurring availability API (real DB)", () => {
       (
         await json<{ readonly data: ReadonlyArray<{ readonly startsAt: string }> }>(publicResponse)
       ).data.map((slot) => slot.startsAt),
-    ).toEqual(["2026-09-08T13:00:00.000Z"]);
+    ).toEqual([`${DAY_AFTER}T13:00:00.000Z`]);
   });
 
   it("lists the practitioner's exceptions date-ordered and owner-scoped", async () => {

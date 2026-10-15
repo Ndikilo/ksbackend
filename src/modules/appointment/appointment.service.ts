@@ -38,6 +38,9 @@ import {
   type AppointmentListRow,
 } from "./appointment.repo";
 
+/** Canonical uuid form — what distinguishes a raw P3 slot id from a P4 key. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * A slot row ready for the booking coherence checks — the shape both a real
  * `availability_slot` row and a freshly materialized virtual window share.
@@ -229,7 +232,11 @@ export const AppointmentServiceLive = Layer.effect(
       key: string,
     ): Effect.Effect<BookableSlot | undefined, SqlError.SqlError> =>
       Effect.gen(function* () {
-        const ref = parseSlotKey(key);
+        // A bare uuid is the P3 contract's raw slot id — still bookable next
+        // to the P4 public keys (the availability picker sends keys; the api
+        // tier pins the raw form). Anything else unparseable stays unbookable.
+        const ref =
+          parseSlotKey(key) ?? (UUID_RE.test(key) ? { kind: "explicit", slotId: key } : undefined);
         if (ref === undefined) return undefined;
         if (ref.kind === "explicit") {
           return yield* repo.lockSlotById(ref.slotId);
@@ -595,6 +602,10 @@ export const AppointmentServiceLive = Layer.effect(
           }
 
           yield* repo.markSlotOpen(appointment.slotId, at);
+          // The target takes the booking exactly like a fresh book() would —
+          // leaving it `open` would let a second patient reserve the same
+          // window after the move (the first real-DB run caught this).
+          yield* repo.markSlotBooked(slot.id, at);
           const moved = yield* repo.rescheduleAppointment(id, {
             slotId: slot.id,
             startsAt: slot.startsAt,
